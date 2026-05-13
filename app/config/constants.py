@@ -40,7 +40,7 @@ TRENDING_FILTER_MOVIES = "EgZtb3ZpZXM%3D"
 
 # ── Client info (bump clientVersion nếu YouTube trả 400) ────────────────────
 CLIENT_NAME    = "WEB"
-CLIENT_VERSION = "2.20250901.05.00"
+CLIENT_VERSION = "2.20260428.01.00"  # fallback; live version extracted from homepage at runtime
 CLIENT_HL      = "en"
 CLIENT_GL      = "US"
 

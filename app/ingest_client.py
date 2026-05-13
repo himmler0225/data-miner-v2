@@ -7,9 +7,9 @@ dù ingest thất bại (data sẽ được crawl lại ở lần sau).
 """
 import os
 import httpx
-from typing import List, Optional
+from typing import Dict, List, Optional
 from app.config.logging_config import get_logger
-from app.types import ChannelInfo, TrendingVideo, SearchVideo, Comment
+from app.types import ChannelInfo, SearchVideo, Comment
 
 logger = get_logger(__name__)
 
@@ -26,6 +26,14 @@ def _make_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(base_url=INGEST_API_URL, headers=_HEADERS, timeout=30)
 
 
+def _safe_int(value) -> Optional[int]:
+    """Parse int from possibly comma-formatted strings like '1,234,567'."""
+    if value is None:
+        return None
+    cleaned = "".join(c for c in str(value) if c.isdigit())
+    return int(cleaned) if cleaned else None
+
+
 async def ingest_channel(data: ChannelInfo) -> bool:
     """Gửi thông tin channel lên API. Trả về True nếu thành công."""
     async with _make_client() as client:
@@ -38,32 +46,16 @@ async def ingest_channel(data: ChannelInfo) -> bool:
             return False
 
 
-async def ingest_trending(
-    videos: List[TrendingVideo],
-    category: Optional[str] = None,
-) -> bool:
-    """Gửi danh sách video trending. Trả về True nếu thành công."""
-    payload = {"videos": videos}
-    if category:
-        payload["category"] = category
-
-    async with _make_client() as client:
-        try:
-            resp = await client.post("/internal/ingest/trending", json=payload)
-            resp.raise_for_status()
-            return True
-        except Exception as e:
-            logger.warning(f"ingest_trending failed ({len(videos)} videos): {e!r}")
-            return False
-
-
 async def ingest_search(
     query: str,
     videos: List[SearchVideo],
     sort: str = "relevance",
 ) -> bool:
     """Gửi kết quả tìm kiếm. Trả về True nếu thành công."""
-    payload = {"query": query, "sort": sort, "videos": videos}
+    valid_videos = [v for v in videos if v.get("video_id")]
+    if not valid_videos:
+        return True
+    payload = {"query": query, "sort": sort, "videos": valid_videos}
 
     async with _make_client() as client:
         try:
@@ -91,14 +83,12 @@ async def ingest_detail(
             "reason": detail.get("reason"),
         }
     else:
-        views_raw = detail.get("views")
-        length_raw = detail.get("length_seconds")
         payload = {
             "video_id": video_id,
             "title": detail.get("title"),
             "author": detail.get("author"),
-            "views": int(views_raw) if views_raw else None,
-            "length_seconds": int(length_raw) if length_raw else None,
+            "views": _safe_int(detail.get("views")),
+            "length_seconds": _safe_int(detail.get("length_seconds")),
             "is_live_content": detail.get("is_live_content", False),
         }
 
@@ -109,6 +99,28 @@ async def ingest_detail(
             return True
         except Exception as e:
             logger.warning(f"ingest_detail failed (video_id={video_id}): {e!r}")
+            return False
+
+
+async def ingest_trending(
+    videos: List[Dict],
+    category: Optional[str] = None,
+) -> bool:
+    """Gửi danh sách video trending. Trả về True nếu thành công."""
+    valid_videos = [v for v in videos if v.get("video_id")]
+    if not valid_videos:
+        return True
+    payload: Dict = {"videos": valid_videos}
+    if category:
+        payload["category"] = category
+
+    async with _make_client() as client:
+        try:
+            resp = await client.post("/internal/ingest/trending", json=payload)
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            logger.warning(f"ingest_trending failed (category={category!r}): {e!r}")
             return False
 
 

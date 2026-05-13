@@ -1,5 +1,5 @@
 from typing import List, Dict
-from ..utils import get_context, get_youtube_api_key, create_httpx_client
+from ..utils import get_context, get_youtube_api_key, create_httpx_client, parse_view_count
 from ..config import get_youtube_headers, get_youtube_api_url
 from ..config.constants import ENDPOINT_SEARCH, SEARCH_FILTER_LIVE
 from ..exceptions import YouTubeStructureChangedError
@@ -10,18 +10,18 @@ def extract_live_videos(items: List[Dict]) -> List[Dict]:
         video = item.get("videoRenderer")
         if not video:
             continue
-        view_count = ""
+        views_raw = ""
         if "shortViewCountText" in video:
-            view_count = video["shortViewCountText"].get("simpleText") or \
+            views_raw = video["shortViewCountText"].get("simpleText") or \
                 video["shortViewCountText"].get("runs", [{}])[0].get("text", "")
-                 
+
         videos.append({
             "video_id": video.get("videoId"),
             "title": video.get("title", {}).get("runs", [{}])[0].get("text", ""),
             "thumbnail": video.get("thumbnail", {}).get("thumbnails", []),
             "channel_name": video.get("ownerText", {}).get("runs", [{}])[0].get("text", ""),
             "url": f"https://www.youtube.com/watch?v={video.get('videoId')}",
-            "views": view_count,
+            "view_count": parse_view_count(views_raw),
             "is_live": True
         })
     return videos

@@ -1,11 +1,13 @@
 import asyncio
 from datetime import datetime
 from typing import Any, Callable, Coroutine
-from app.services.location import get_all_location_videos
+from app.services.location import get_videos_by_region
 from app.services.search import search_youtube
+from app.services.trending import get_trending_videos
 from app.exceptions import YouTubeStructureChangedError
 from app.config.logging_config import get_logger
 from app.config.urls import proxy_manager
+from app.utils import jitter_sleep
 from app import ingest_client
 
 logger = get_logger(__name__)
@@ -60,47 +62,95 @@ def _record_failure(job_id: str) -> int:
     return count
 
 
-# Major cities worldwide — one representative point per country/region
-# Each city crawled with radius 50km, step 25km (~9 grid points each)
+# Region targets — each entry drives one search call with gl/hl context override.
+# YouTube internal API ignores lat/lng; gl (country code) is the correct targeting mechanism.
 LOCATION_TARGETS = [
     # Southeast Asia
-    {"name": "Hanoi",       "lat": 21.0285,  "lng": 105.8542},
-    {"name": "Ho Chi Minh", "lat": 10.8231,  "lng": 106.6297},
-    {"name": "Bangkok",     "lat": 13.7563,  "lng": 100.5018},
-    {"name": "Jakarta",     "lat": -6.2088,  "lng": 106.8456},
-    {"name": "Singapore",   "lat": 1.3521,   "lng": 103.8198},
-    {"name": "Manila",      "lat": 14.5995,  "lng": 120.9842},
-    {"name": "Kuala Lumpur","lat": 3.1390,   "lng": 101.6869},
+    {"name": "Hanoi",        "gl": "VN", "hl": "vi", "query": "Hà Nội"},
+    {"name": "Ho Chi Minh",  "gl": "VN", "hl": "vi", "query": "Sài Gòn"},
+    {"name": "Bangkok",      "gl": "TH", "hl": "th", "query": "กรุงเทพ"},
+    {"name": "Jakarta",      "gl": "ID", "hl": "id", "query": "Jakarta"},
+    {"name": "Singapore",    "gl": "SG", "hl": "en", "query": "Singapore"},
+    {"name": "Manila",       "gl": "PH", "hl": "en", "query": "Manila"},
+    {"name": "Kuala Lumpur", "gl": "MY", "hl": "ms", "query": "Kuala Lumpur"},
     # East Asia
-    {"name": "Tokyo",       "lat": 35.6762,  "lng": 139.6503},
-    {"name": "Seoul",       "lat": 37.5665,  "lng": 126.9780},
-    {"name": "Beijing",     "lat": 39.9042,  "lng": 116.4074},
-    {"name": "Shanghai",    "lat": 31.2304,  "lng": 121.4737},
+    {"name": "Tokyo",        "gl": "JP", "hl": "ja", "query": "東京"},
+    {"name": "Seoul",        "gl": "KR", "hl": "ko", "query": "서울"},
+    {"name": "Shanghai",     "gl": "CN", "hl": "zh-Hans", "query": "上海"},
     # South Asia
-    {"name": "Mumbai",      "lat": 19.0760,  "lng": 72.8777},
-    {"name": "Delhi",       "lat": 28.6139,  "lng": 77.2090},
+    {"name": "Mumbai",       "gl": "IN", "hl": "hi", "query": "Mumbai"},
     # Middle East
-    {"name": "Dubai",       "lat": 25.2048,  "lng": 55.2708},
-    {"name": "Cairo",       "lat": 30.0444,  "lng": 31.2357},
+    {"name": "Dubai",        "gl": "AE", "hl": "ar", "query": "دبي"},
+    {"name": "Cairo",        "gl": "EG", "hl": "ar", "query": "القاهرة"},
     # Europe
-    {"name": "London",      "lat": 51.5074,  "lng": -0.1278},
-    {"name": "Paris",       "lat": 48.8566,  "lng": 2.3522},
-    {"name": "Berlin",      "lat": 52.5200,  "lng": 13.4050},
-    {"name": "Moscow",      "lat": 55.7558,  "lng": 37.6176},
+    {"name": "London",       "gl": "GB", "hl": "en", "query": "London"},
+    {"name": "Paris",        "gl": "FR", "hl": "fr", "query": "Paris"},
+    {"name": "Berlin",       "gl": "DE", "hl": "de", "query": "Berlin"},
+    {"name": "Moscow",       "gl": "RU", "hl": "ru", "query": "Москва"},
     # North America
-    {"name": "New York",    "lat": 40.7128,  "lng": -74.0060},
-    {"name": "Los Angeles", "lat": 34.0522,  "lng": -118.2437},
-    {"name": "Toronto",     "lat": 43.6532,  "lng": -79.3832},
-    {"name": "Mexico City", "lat": 19.4326,  "lng": -99.1332},
+    {"name": "New York",     "gl": "US", "hl": "en", "query": "New York"},
+    {"name": "Los Angeles",  "gl": "US", "hl": "en", "query": "Los Angeles"},
+    {"name": "Toronto",      "gl": "CA", "hl": "en", "query": "Toronto"},
+    {"name": "Mexico City",  "gl": "MX", "hl": "es", "query": "Ciudad de México"},
     # South America
-    {"name": "Sao Paulo",   "lat": -23.5505, "lng": -46.6333},
-    {"name": "Buenos Aires","lat": -34.6037, "lng": -58.3816},
+    {"name": "Sao Paulo",    "gl": "BR", "hl": "pt", "query": "São Paulo"},
+    {"name": "Buenos Aires", "gl": "AR", "hl": "es", "query": "Buenos Aires"},
     # Africa
-    {"name": "Lagos",       "lat": 6.5244,   "lng": 3.3792},
-    {"name": "Johannesburg","lat": -26.2041, "lng": 28.0473},
+    {"name": "Lagos",        "gl": "NG", "hl": "en", "query": "Lagos"},
+    {"name": "Johannesburg", "gl": "ZA", "hl": "en", "query": "Johannesburg"},
     # Oceania
-    {"name": "Sydney",      "lat": -33.8688, "lng": 151.2093},
+    {"name": "Sydney",       "gl": "AU", "hl": "en", "query": "Sydney"},
 ]
+
+
+async def crawl_trending_videos():
+    """
+    Crawl video trending toàn cầu — chạy hằng ngày lúc 07:00.
+    Lấy top 100 video trending, ingest vào API để BullMQ worker crawl detail+comments.
+    """
+    job_id = "crawl_trending"
+
+    if _is_circuit_open(job_id):
+        logger.critical(
+            f"Job '{job_id}' is disabled after {MAX_CONSECUTIVE_FAILURES} "
+            "consecutive failures — manual intervention required"
+        )
+        return {"success": False, "error": "circuit_open"}
+
+    try:
+        logger.info("Starting trending crawl...")
+        start_time = datetime.now()
+
+        proxy = await proxy_manager.get_proxy()
+        videos = await _with_retry(
+            get_trending_videos,
+            proxy=proxy,
+            max_results=100,
+        )
+
+        if videos:
+            await ingest_client.ingest_trending(videos=videos)
+
+        duration = (datetime.now() - start_time).total_seconds()
+        _record_success(job_id)
+        logger.info(
+            "Trending crawl completed",
+            extra={"extra_data": {"total_videos": len(videos), "duration_seconds": duration}},
+        )
+        return {"success": True, "total_videos": len(videos), "duration": duration}
+
+    except YouTubeStructureChangedError as e:
+        count = _record_failure(job_id)
+        logger.critical(
+            f"YouTube structure changed in trending crawl: {e}",
+            extra={"extra_data": {"consecutive_failures": count, "context": e.context}},
+        )
+        return {"success": False, "error": "structure_changed", "detail": str(e)}
+
+    except Exception as e:
+        count = _record_failure(job_id)
+        logger.error(f"Error during trending crawl (failure #{count}): {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 async def crawl_location_videos():
@@ -129,21 +179,28 @@ async def crawl_location_videos():
             try:
                 proxy = await proxy_manager.get_proxy()
                 videos = await _with_retry(
-                    get_all_location_videos,
-                    center_lat=target["lat"],
-                    center_lng=target["lng"],
+                    get_videos_by_region,
+                    gl=target["gl"],
+                    hl=target["hl"],
+                    query=target["query"],
                     proxy=proxy,
-                    step_km=25,
-                    radius_km=50,
-                    max_results_per_loc=20,
+                    max_results=50,
                 )
 
                 if videos:
-                    await ingest_client.ingest_trending(videos=videos, category=city)
+                    search_videos = [
+                        {k: v for k, v in video.items() if k != "url"}
+                        for video in videos
+                    ]
+                    await ingest_client.ingest_search(
+                        query=f"location:{city}",
+                        videos=search_videos,
+                        sort="relevance",
+                    )
                     total_videos += len(videos)
                     logger.info(f"[{city}] crawled {len(videos)} videos")
 
-                await asyncio.sleep(3)
+                await jitter_sleep(3.5)
 
             except YouTubeStructureChangedError:
                 raise
@@ -246,7 +303,7 @@ async def crawl_popular_keywords():
                 )
 
                 # Delay nhỏ giữa các request để tránh bị YouTube rate limit
-                await asyncio.sleep(2)
+                await jitter_sleep(2.5)
 
             except YouTubeStructureChangedError:
                 # Cấu trúc thay đổi ảnh hưởng tất cả keyword — dừng ngay

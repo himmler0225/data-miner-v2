@@ -6,6 +6,7 @@ from app.utils import get_youtube_api_key, get_context, create_httpx_client
 from app.config import get_youtube_headers, get_youtube_api_url
 from app.config.constants import ENDPOINT_SEARCH, SEARCH_FILTER_LOCATION
 from app.scheduler.jobs import (
+    crawl_trending_videos,
     crawl_location_videos,
     crawl_popular_keywords,
     cleanup_old_data,
@@ -124,6 +125,19 @@ async def list_jobs():
             "running": job.id in _running_jobs,
         })
     return {"jobs": jobs, "running": list(_running_jobs)}
+
+
+@router.post("/jobs/trending")
+async def trigger_trending(background_tasks: BackgroundTasks):
+    """Trigger crawl trending videos ngay lập tức (chạy background)."""
+    if "crawl_trending" in _running_jobs:
+        return {"status": "already_running", "job": "crawl_trending"}
+
+    async def _run():
+        await _run_job("crawl_trending", crawl_trending_videos)
+
+    background_tasks.add_task(_run)
+    return {"status": "started", "job": "crawl_trending"}
 
 
 @router.post("/jobs/location")

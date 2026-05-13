@@ -1,13 +1,15 @@
 import asyncio
 from fastapi import APIRouter, HTTPException, Query, Depends, Request, Response
 from app.services.search import search_youtube
+from app.services.trending import get_trending_videos
 from app.services.detail import get_video_detail
 from app.services.channel import get_channel_videos
 from app.services.channel_info import get_channel_info
 from app.services.playlist import get_playlist_videos, get_videos_from_playlist
 from app.services.comment import get_video_comments
 from app.services.live import get_all_live_videos
-from app.services.location import generate_grid_locations, get_videos_by_location
+from app.services.shorts import get_shorts_feed
+from app.services.location import get_videos_by_region
 from app.utils import resolve_channel_id_from_handle
 from app.middleware import verify_api_key, limiter
 from app.config.logging_config import get_logger
@@ -39,7 +41,7 @@ def retry_on_failure(max_retries=3, delay=1):
                 except Exception as e:
                     last_exception = e
                     if attempt < max_retries - 1:
-                        wait_time = delay * (attempt + 1)  # linear backoff
+                        wait_time = delay * (attempt + 1)
                         logger.warning(
                             f"Attempt {attempt + 1}/{max_retries} failed for {func.__name__}. "
                             f"Retrying in {wait_time}s... Error: {str(e)}"
@@ -48,193 +50,183 @@ def retry_on_failure(max_retries=3, delay=1):
                         continue
                     logger.error(f"All {max_retries} attempts failed for {func.__name__}", exc_info=True)
                     raise last_exception
-            return None
         return wrapper
     return decorator
 
-@router.get("/search")
+@router.get("/videos/trending", summary="Trending Videos")
+async def trending_videos(
+    limit: int = Query(50, ge=1, le=200),
+):
+    @retry_on_failure(max_retries=3, delay=1)
+    async def _():
+        proxy = await proxy_manager.get_proxy()
+        videos = await get_trending_videos(proxy=proxy, max_results=limit)
+        return {"total": len(videos), "videos": videos}
+    try:
+        return await _()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/videos/search", summary="Search Videos")
 @limiter.limit("30/minute")
 async def search_videos(
     request: Request,
-    response: Response,  # required by slowapi to inject rate-limit headers
+    response: Response,
     q: str = Query(..., description="Search query"),
-    page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(30, ge=1, le=50, description="Results per page"),
-    sort: str = Query("relevance", enum=["relevance", "upload_date", "view_count", "rating"], description="Sort order"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(30, ge=1, le=50),
+    sort: str = Query("relevance", enum=["relevance", "upload_date", "view_count", "rating"]),
 ):
     @retry_on_failure(max_retries=3, delay=1)
-    async def _search():
+    async def _():
         start = (page - 1) * limit
-        max_fetch = start + limit
         proxy = await proxy_manager.get_proxy()
-        results = await search_youtube(q, max_results=max_fetch, sort=sort, proxy=proxy)
-        return {
-            "query": q,
-            "page": page,
-            "limit": limit,
-            "total": len(results),
-            "results": results[start: start + limit]
-        }
-
+        results = await search_youtube(q, max_results=start + limit, sort=sort, proxy=proxy)
+        return {"query": q, "page": page, "limit": limit, "total": len(results), "results": results[start:start + limit]}
     try:
-        return await _search()
+        return await _()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/video/{video_id}")
-async def video_detail(video_id: str):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _get_detail():
-        proxy = await proxy_manager.get_proxy()
-        detail = await get_video_detail(video_id, proxy=proxy)
-        return {"detail": detail}
 
-    try:
-        return await _get_detail()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/channel/videos")
-async def video_channel(
-    channel_input: str = Query(..., description="Channel name: @xxx or channel ID: UCxxx"),
-    page: int = Query(1, ge=1),
+@router.get("/videos/shorts", summary="Get Videos Shorts")
+async def get_videos_shorts(
     limit: int = Query(30, ge=1, le=50),
 ):
     @retry_on_failure(max_retries=3, delay=1)
-    async def _get_channel_videos():
-        if channel_input.startswith("@"):
-            channel_id = await resolve_channel_id_from_handle(channel_input.lstrip("@"))
-        else:
-            channel_id = channel_input
-
-        start = (page - 1) * limit
-        max_fetch = start + limit
+    async def _():
         proxy = await proxy_manager.get_proxy()
-        videos = await get_channel_videos(channel_id=channel_id, max_results=max_fetch, proxy=proxy)
-
-        return {
-            "channel_id": channel_id,
-            "video_count": len(videos),
-            "videos": videos
-        }
-
+        videos = await get_shorts_feed(proxy=proxy, max_results=limit)
+        return {"total": len(videos), "videos": videos}
     try:
-        return await _get_channel_videos()
+        return await _()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/channel/{channel_id}")
-async def channel_info(channel_id: str):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _get_info():
-        proxy = await proxy_manager.get_proxy()
-        info = await get_channel_info(channel_id, proxy=proxy)
-        return {"info": info}
 
-    try:
-        return await _get_info()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/channel/{channel_id}/playlist")
-async def get_channel_playlists(channel_id: str):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _get_playlists():
-        proxy = await proxy_manager.get_proxy()
-        playlists = await get_playlist_videos(channel_id, proxy=proxy)
-        return {"playlists": playlists}
-
-    try:
-        return await _get_playlists()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/playlist/{playlist_id}/videos")
-async def get_videos_from_a_playlist(playlist_id: str):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _get_playlist_videos():
-        proxy = await proxy_manager.get_proxy()
-        videos = await get_videos_from_playlist(playlist_id, proxy=proxy)
-        return {"videos": videos}
-
-    try:
-        return await _get_playlist_videos()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/video/{video_id}/comments")
-async def get_comments(
-    video_id: str,
-    page: int = Query(1, ge=1),
-    limit: int = Query(30, ge=1, le=50),
-):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _get_comments():
-        start = (page - 1) * limit
-        max_fetch = start + limit
-        proxy = await proxy_manager.get_proxy()
-        comments = await get_video_comments(video_id, proxy=proxy, max_comments=max_fetch)
-        return {
-            "video_id": video_id,
-            "total": len(comments),
-            "comments": comments
-        }
-
-    try:
-        return await _get_comments()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-@router.get("/videos/live")
+@router.get("/videos/live", summary="Get Videos Live")
 async def get_videos_live(
     q: str = Query(...),
     page: int = Query(1, ge=1),
     limit: int = Query(30, ge=1, le=50),
 ):
     @retry_on_failure(max_retries=3, delay=1)
-    async def _get_live():
+    async def _():
         start = (page - 1) * limit
-        max_fetch = start + limit
         proxy = await proxy_manager.get_proxy()
-        videos = await get_all_live_videos(q=q, proxy=proxy, max_results=max_fetch)
-        return {"videos": videos}
-
+        videos = await get_all_live_videos(q=q, proxy=proxy, max_results=start + limit)
+        return {"total": len(videos), "videos": videos}
     try:
-        return await _get_live()
+        return await _()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/location/videos")
+
+@router.get("/videos/location", summary="Get Videos By Region")
 async def get_videos_location(
-    lat: float = Query(..., description="Latitude"),
-    lng: float = Query(..., description="Longitude"),
-    radius_km: int = Query(50, ge=1, le=500, description="Total search radius (km) around location"),
-    step_km: int = Query(10, ge=1, le=100, description="Distance between each point in the grid (km)"),
-    per_location_limit: int = Query(20, ge=1, le=50, description="Maximum number of videos per coordinate"),
+    gl: str = Query(..., description="Country code (e.g. VN, JP, US)"),
+    hl: str = Query("en", description="Language code (e.g. vi, ja, en)"),
+    query: str = Query(..., description="Search query in local language"),
+    max_results: int = Query(50, ge=1, le=100),
 ):
     try:
-        grid_locations = generate_grid_locations(center_lat=lat, center_lng=lng, step_km=step_km, radius_km=radius_km)
-
         proxy = await proxy_manager.get_proxy()
-        tasks = [
-            get_videos_by_location(location=loc, radius=f"{step_km}km", max_results=per_location_limit, proxy=proxy)
-            for loc in grid_locations
-        ]
-
-        results = await asyncio.gather(*tasks)
-
-        # Deduplicate by videoId across grid points
-        unique = {}
-        for video_list in results:
-            for video in video_list:
-                unique[video["videoId"]] = video
-
-        return {
-            "center": f"{lat},{lng}",
-            "locations_scanned": len(grid_locations),
-            "total_unique_videos": len(unique),
-            "videos": list(unique.values())
-        }
-
+        videos = await get_videos_by_region(
+            gl=gl, hl=hl, query=query, proxy=proxy, max_results=max_results,
+        )
+        return {"gl": gl, "query": query, "total": len(videos), "videos": videos}
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/video/{video_id}", summary="Video Detail")
+async def video_detail(video_id: str):
+    @retry_on_failure(max_retries=3, delay=1)
+    async def _():
+        proxy = await proxy_manager.get_proxy()
+        detail = await get_video_detail(video_id, proxy=proxy)
+        return {"detail": detail}
+    try:
+        return await _()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/video/{video_id}/comments", summary="Get Comments")
+async def get_comments(
+    video_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(30, ge=1, le=100),
+):
+    @retry_on_failure(max_retries=3, delay=1)
+    async def _():
+        start = (page - 1) * limit
+        proxy = await proxy_manager.get_proxy()
+        comments = await get_video_comments(video_id, proxy=proxy, max_comments=start + limit)
+        return {"video_id": video_id, "total": len(comments), "comments": comments}
+    try:
+        return await _()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/channel/{channel_id}", summary="Channel Info")
+async def channel_info(channel_id: str):
+    @retry_on_failure(max_retries=3, delay=1)
+    async def _():
+        proxy = await proxy_manager.get_proxy()
+        info = await get_channel_info(channel_id, proxy=proxy)
+        return {"info": info}
+    try:
+        return await _()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/channel/{channel_id}/videos", summary="Channel Videos")
+async def channel_videos(
+    channel_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(30, ge=1, le=50),
+):
+    @retry_on_failure(max_retries=3, delay=1)
+    async def _():
+        if channel_id.startswith("@"):
+            resolved = await resolve_channel_id_from_handle(channel_id.lstrip("@"))
+        else:
+            resolved = channel_id
+        start = (page - 1) * limit
+        proxy = await proxy_manager.get_proxy()
+        videos = await get_channel_videos(channel_id=resolved, max_results=start + limit, proxy=proxy)
+        return {"channel_id": resolved, "total": len(videos), "videos": videos}
+    try:
+        return await _()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/channel/{channel_id}/playlists", summary="Channel Playlists")
+async def channel_playlists(channel_id: str):
+    @retry_on_failure(max_retries=3, delay=1)
+    async def _():
+        proxy = await proxy_manager.get_proxy()
+        playlists = await get_playlist_videos(channel_id, proxy=proxy)
+        return {"channel_id": channel_id, "total": len(playlists), "playlists": playlists}
+    try:
+        return await _()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/playlist/{playlist_id}/videos", summary="Playlist Videos")
+async def playlist_videos(playlist_id: str):
+    @retry_on_failure(max_retries=3, delay=1)
+    async def _():
+        proxy = await proxy_manager.get_proxy()
+        videos = await get_videos_from_playlist(playlist_id, proxy=proxy)
+        return {"playlist_id": playlist_id, "total": len(videos), "videos": videos}
+    try:
+        return await _()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

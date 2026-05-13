@@ -1,5 +1,5 @@
 from typing import List, Dict
-from ..utils import get_youtube_api_key, get_context, create_httpx_client
+from ..utils import get_youtube_api_key, get_context, create_httpx_client, parse_view_count
 from ..config import get_youtube_headers, get_youtube_api_url
 from ..config.constants import ENDPOINT_SEARCH, SORT_RELEVANCE, SORT_UPLOAD_DATE, SORT_VIEW_COUNT, SORT_RATING
 from ..exceptions import YouTubeStructureChangedError
@@ -32,7 +32,7 @@ def extract_video_items(items: List[Dict]) -> List[Dict]:
             "video_id": video.get("videoId"),
             "url": f"https://www.youtube.com/watch?v={video.get('videoId')}",
             "duration": video.get("lengthText", {}).get("simpleText", ""),
-            "views": video.get("viewCountText", {}).get("simpleText", ""),
+            "view_count": parse_view_count(video.get("viewCountText", {}).get("simpleText", "")),
             "channel": video.get("ownerText", {}).get("runs", [{}])[0].get("text", ""),
             "channel_id": video.get("ownerText", {}).get("runs", [{}])[0]
                 .get("navigationEndpoint", {})

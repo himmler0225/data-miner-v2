@@ -1,5 +1,5 @@
 from typing import List, Dict
-from ..utils import get_youtube_api_key, get_context, create_httpx_client
+from ..utils import get_youtube_api_key, get_context, create_httpx_client, parse_view_count
 from ..config import get_youtube_api_url
 from ..config.constants import ENDPOINT_NEXT
 from ..exceptions import YouTubeStructureChangedError
@@ -8,12 +8,13 @@ from ..config.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-async def fetch_replies(client, continuation_token: str, context: dict, proxy: str = None) -> List[Dict]:
+async def fetch_replies(client, continuation_token: str, context: dict, proxy: str = None, max_depth: int = 2) -> List[Dict]:
     replies = []
     API_KEY = await get_youtube_api_key(proxy=proxy)
     URL_COMMENT = get_youtube_api_url(ENDPOINT_NEXT, API_KEY)
+    depth = 0
 
-    while continuation_token:
+    while continuation_token and depth < max_depth:
         payload = {
             "context": context,
             "continuation": continuation_token
@@ -25,6 +26,7 @@ async def fetch_replies(client, continuation_token: str, context: dict, proxy: s
 
         entity_map = parse_comment_entities(data)
         continuation_token = None
+        depth += 1
 
         actions = data.get("onResponseReceivedEndpoints", [])
         for action in actions:
@@ -131,8 +133,8 @@ def parse_comment_entities(data: dict) -> Dict[str, Dict]:
                 "author": comment.get("author", {}).get("displayName", ""),
                 "avatar": comment.get("author", {}).get("avatarThumbnailUrl", ""),
                 "published_time": props.get("publishedTime", "Unknown"),
-                "likes": int(comment.get("toolbar", {}).get("likeCountLiked") or 0),
-                "replies": int(comment.get("toolbar", {}).get("replyCount") or 0)
+                "likes": parse_view_count(comment.get("toolbar", {}).get("likeCountLiked")),
+                "replies": parse_view_count(comment.get("toolbar", {}).get("replyCount"))
             }
 
     return result

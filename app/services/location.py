@@ -1,85 +1,126 @@
-import asyncio
-import json
-from typing import List, Dict
-from ..utils import get_youtube_api_key, get_context, create_httpx_client
+import random
+from typing import List, Dict, Optional
+
+from ..utils import (
+    get_youtube_api_key, get_visitor_data, get_client_version,
+    create_httpx_client, parse_view_count,
+)
 from ..config import get_youtube_headers, get_youtube_api_url
-from ..config.constants import ENDPOINT_SEARCH, SEARCH_FILTER_LOCATION
+from ..config.constants import ENDPOINT_SEARCH, CLIENT_NAME
 from ..exceptions import YouTubeStructureChangedError
 from ..config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-def extract_videos_from_search(items: List[Dict]) -> List[Dict]:
+# Timezone hint per country — makes the context more realistic
+_GL_TIMEZONE = {
+    "VN": "Asia/Ho_Chi_Minh",
+    "TH": "Asia/Bangkok",
+    "ID": "Asia/Jakarta",
+    "SG": "Asia/Singapore",
+    "PH": "Asia/Manila",
+    "MY": "Asia/Kuala_Lumpur",
+    "JP": "Asia/Tokyo",
+    "KR": "Asia/Seoul",
+    "CN": "Asia/Shanghai",
+    "IN": "Asia/Kolkata",
+    "AE": "Asia/Dubai",
+    "EG": "Africa/Cairo",
+    "GB": "Europe/London",
+    "FR": "Europe/Paris",
+    "DE": "Europe/Berlin",
+    "RU": "Europe/Moscow",
+    "US": "America/New_York",
+    "CA": "America/Toronto",
+    "MX": "America/Mexico_City",
+    "BR": "America/Sao_Paulo",
+    "AR": "America/Argentina/Buenos_Aires",
+    "NG": "Africa/Lagos",
+    "ZA": "Africa/Johannesburg",
+    "AU": "Australia/Sydney",
+}
+
+
+def _get_region_context(gl: str, hl: str) -> dict:
+    """
+    InnerTube context with overridden gl/hl for geographic targeting.
+    Only used by location.py — does not modify the shared get_context().
+    """
+    client: dict = {
+        "hl": hl,
+        "gl": gl,
+        "clientName": CLIENT_NAME,
+        "clientVersion": get_client_version(),
+        "platform": "DESKTOP",
+        "clientFormFactor": "UNKNOWN_FORM_FACTOR",
+        "timeZone": _GL_TIMEZONE.get(gl, "America/New_York"),
+        "screenWidthPoints": random.choice([1280, 1366, 1440, 1920]),
+        "screenHeightPoints": random.choice([720, 768, 900, 1080]),
+        "screenPixelDensity": random.choice([1, 2]),
+    }
+    visitor_data = get_visitor_data()
+    if visitor_data:
+        client["visitorData"] = visitor_data
+
+    return {
+        "client": client,
+        "user": {"lockedSafetyMode": False},
+        "request": {
+            "useSsl": True,
+            "internalExperimentFlags": [],
+            "consistencyTokenJars": [],
+        },
+    }
+
+
+def _extract_videos(items: List[Dict]) -> List[Dict]:
     results = []
     for item in items:
-        video = item.get("videoRenderer")
+        # Handles both direct videoRenderer and richItemRenderer wrapper
+        if "richItemRenderer" in item:
+            content = item["richItemRenderer"].get("content", {})
+        else:
+            content = item
+        video = content.get("videoRenderer")
         if not video:
             continue
+        views_raw = (
+            video.get("viewCountText", {}).get("simpleText", "")
+            or video.get("shortViewCountText", {}).get("simpleText", "")
+        )
         results.append({
             "video_id": video.get("videoId"),
             "title": video.get("title", {}).get("runs", [{}])[0].get("text", ""),
             "channel_name": video.get("ownerText", {}).get("runs", [{}])[0].get("text", ""),
-            "views": video.get("viewCountText", {}).get("simpleText", ""),
+            "view_count": parse_view_count(views_raw),
             "published_time": video.get("publishedTimeText", {}).get("simpleText", ""),
-            "url": f"https://www.youtube.com/watch?v={video.get('videoId')}"
+            "url": f"https://www.youtube.com/watch?v={video.get('videoId')}",
         })
     return results
 
-import math
 
-def generate_grid_locations(center_lat, center_lng, step_km=10, radius_km=50):
-    R = 6371
-    grid = []
-
-    num_steps = int(radius_km / step_km)
-    for dx in range(-num_steps, num_steps + 1):
-        for dy in range(-num_steps, num_steps + 1):
-            distance = math.sqrt(dx ** 2 + dy ** 2) * step_km
-            if distance > radius_km:
-                continue
-
-            d_lat = (step_km * dx) / R
-            d_lng = (step_km * dy) / (R * math.cos(math.radians(center_lat)))
-
-            lat = center_lat + math.degrees(d_lat)
-            lng = center_lng + math.degrees(d_lng)
-            grid.append(f"{lat:.6f},{lng:.6f}")
-
-    return grid
-
-
-async def get_videos_by_location(location: str, proxy: str = None, radius: str = "500km", max_results: int = 50) -> List[Dict]:
-    API_KEY = await get_youtube_api_key(proxy=proxy)
-    SEARCH_URL = get_youtube_api_url(ENDPOINT_SEARCH, API_KEY)
+async def get_videos_by_region(
+    gl: str,
+    hl: str,
+    query: str,
+    proxy: Optional[str] = None,
+    max_results: int = 50,
+) -> List[Dict]:
+    """
+    Search YouTube with a specific country context (gl/hl) to get region-relevant results.
+    Replaces the broken lat/lng approach — YouTube internal API ignores location/locationRadius.
+    """
+    api_key = await get_youtube_api_key(proxy=proxy)
+    search_url = get_youtube_api_url(ENDPOINT_SEARCH, api_key)
     headers = get_youtube_headers()
+    context = _get_region_context(gl, hl)
 
-    payload = {
-        "context": get_context(),
-        "query": "*",
-        "params": SEARCH_FILTER_LOCATION,
-        "location": location,
-        "locationRadius": radius,
-        "maxResults": max_results
-    }
-    
-    collected = []
-    continuation = None
+    collected: List[Dict] = []
 
     async with create_httpx_client(proxy=proxy, headers=headers) as client:
-        resp = await client.post(SEARCH_URL, json=payload)
+        resp = await client.post(search_url, json={"context": context, "query": query})
         resp.raise_for_status()
         data = resp.json()
-
-        # Log top-level keys and first 2 levels to inspect current YouTube structure
-        logger.debug(
-            "YouTube location search raw response (top-level)",
-            extra={"extra_data": {
-                "location": location,
-                "top_keys": list(data.keys()),
-                "contents_keys": list(data.get("contents", {}).keys()),
-                "raw_preview": json.dumps(data, ensure_ascii=False)[:3000],
-            }}
-        )
 
         section_contents = (
             data
@@ -90,72 +131,59 @@ async def get_videos_by_location(location: str, proxy: str = None, radius: str =
             .get("contents", [])
         )
         if not section_contents:
-            logger.warning(
-                "section_contents empty — dumping full response to debug",
-                extra={"extra_data": {
-                    "location": location,
-                    "full_response": json.dumps(data, ensure_ascii=False)[:8000],
-                }}
-            )
             raise YouTubeStructureChangedError(
-                "sectionListRenderer.contents not found in location search response",
-                context={"location": location, "top_keys": list(data.get("contents", {}).keys())}
+                "sectionListRenderer.contents not found in region search response",
+                context={"gl": gl, "query": query, "top_keys": list(data.get("contents", {}).keys())},
             )
-        
-        for section in section_contents:
-            items = section.get("itemSectionRenderer", {}).get("contents", [])
-            videos = extract_videos_from_search(items)
-            if videos:
-                collected += videos
 
         continuation = None
         for section in section_contents:
             if "itemSectionRenderer" in section:
-                continuations = section["itemSectionRenderer"].get("continuations")
-                if continuations:
-                    continuation = continuations[0].get("continuationItemRenderer", {}) \
-                                                  .get("continuationEndpoint", {}) \
-                                                  .get("continuationCommand", {}) \
-                                                  .get("token")
-                    if continuation:
-                        break
-        
+                items = section["itemSectionRenderer"].get("contents", [])
+                collected.extend(_extract_videos(items))
+            if "continuationItemRenderer" in section:
+                continuation = (
+                    section["continuationItemRenderer"]
+                    .get("continuationEndpoint", {})
+                    .get("continuationCommand", {})
+                    .get("token")
+                )
+
         while continuation and len(collected) < max_results:
-            cont_payload = {"context": get_context(), "continuation": continuation}
-            resp = await client.post(SEARCH_URL, json=cont_payload)
+            resp = await client.post(
+                search_url,
+                json={"context": context, "continuation": continuation},
+            )
             resp.raise_for_status()
             data = resp.json()
-            
+
             commands = data.get("onResponseReceivedCommands", [])
-            items = (commands[0] if commands else {}) \
-                        .get("appendContinuationItemsAction", {}) \
-                        .get("continuationItems", [])
-            collected += extract_videos_from_search(items)
-            
-            continuation = next(
-                (item.get("continuationItemRenderer", {}) \
-                    .get("continuationEndpoint", {}) \
-                    .get("continuationCommand", {}) \
-                    .get("token")
-                 for item in items if "continuationItemRenderer" in item),
-                None
+            continuation_items = (
+                commands[0].get("appendContinuationItemsAction", {}).get("continuationItems", [])
+                if commands else []
             )
-    
-    return collected[:max_results]
 
-async def get_all_location_videos(center_lat: float, center_lng: float, proxy: str = None, step_km: int = 10, radius_km: int = 50, max_results_per_loc: int = 20):
-    locations = generate_grid_locations(center_lat, center_lng, step_km=step_km, radius_km=radius_km)
+            continuation = None
+            for section in continuation_items:
+                if "itemSectionRenderer" in section:
+                    items = section["itemSectionRenderer"].get("contents", [])
+                    collected.extend(_extract_videos(items))
+                if "continuationItemRenderer" in section:
+                    continuation = (
+                        section["continuationItemRenderer"]
+                        .get("continuationEndpoint", {})
+                        .get("continuationCommand", {})
+                        .get("token")
+                    )
 
-    tasks = [get_videos_by_location(loc, proxy=proxy, radius="10km", max_results=max_results_per_loc) for loc in locations]
-    results = await asyncio.gather(*tasks)
+    # Deduplicate
+    seen: set = set()
+    unique: List[Dict] = []
+    for v in collected:
+        vid = v.get("video_id")
+        if vid and vid not in seen:
+            seen.add(vid)
+            unique.append(v)
 
-    all_videos = []
-    seen = set()
-    for videos in results:
-        for v in videos:
-            vid = v.get("video_id")
-            if vid and vid not in seen:
-                all_videos.append(v)
-                seen.add(vid)
-
-    return all_videos
+    logger.info(f"[location] gl={gl} query='{query}' → {len(unique)} videos")
+    return unique[:max_results]
