@@ -152,17 +152,36 @@ def create_httpx_client(proxy: str = None, headers: dict = None, timeout: int = 
     return httpx.AsyncClient(**kwargs)
 
 def parse_view_count(text) -> int:
-    """Parse YouTube view strings like '109M views', '1.2K', '3,456' → int."""
     if not text:
         return 0
-    first = str(text).split()[0].strip().upper().replace(",", "")
+
+    first = (
+        str(text)
+        .replace("\xa0", " ")
+        .split()[0]
+        .strip()
+        .upper()
+        .replace(",", "")
+    )
+
     try:
+        # Vietnamese format: 191 Tr
+        if "TR" in str(text).upper():
+            number = first.replace(".", "").replace(",", ".")
+            return int(float(number) * 1_000_000)
+
+        # English format
         if first.endswith("K"):
             return int(float(first[:-1]) * 1_000)
+
         if first.endswith("M"):
             return int(float(first[:-1]) * 1_000_000)
+
         if first.endswith("B"):
             return int(float(first[:-1]) * 1_000_000_000)
-        return int(float(first))
+
+        # Normal number with dots
+        return int(first.replace(".", ""))
+
     except (ValueError, AttributeError):
         return 0

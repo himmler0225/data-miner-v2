@@ -60,7 +60,7 @@ async def trending_videos(
     @retry_on_failure(max_retries=3, delay=1)
     async def _():
         proxy = await proxy_manager.get_proxy()
-        videos = await get_trending_videos(proxy=proxy, max_results=limit)
+        videos = await get_trending_videos(proxy=proxy, max_results=limit, skip_live=True)
         return {"total": len(videos), "videos": videos}
     try:
         return await _()

@@ -14,8 +14,18 @@ logger = get_logger(__name__)
 
 TRENDING_URL = "https://www.youtube.com/feed/trending"
 
+def _is_live_video(video: Dict) -> bool:
+    duration = video.get("duration", "")
+    if not duration:
+        return True 
+    
+    if duration in ("0:00", "00:00", ""):
+        return True
+        
+    return False
 
-def extract_videos(items: List[Dict], rank_offset: int = 0) -> List[Dict]:
+
+def extract_videos(items: List[Dict], rank_offset: int = 0, skip_live: bool = True) -> List[Dict]:
     results = []
     for item in items:
         video = item.get("videoRenderer") or item.get("gridVideoRenderer")
@@ -25,6 +35,26 @@ def extract_videos(items: List[Dict], rank_offset: int = 0) -> List[Dict]:
         video_id = video.get("videoId")
         if not video_id:
             continue
+
+        if skip_live:
+            badges = video.get("badges", [])
+            for badge in badges:
+                label = badge.get("metadataBadgeRenderer", {}) \
+                             .get("label", "").lower()
+                if label in ("live", "trực tiếp", "đang phát trực tiếp"):
+                    break
+            else:
+                pass
+            
+            overlays = video.get("thumbnailOverlays", [])
+            is_live = any(
+                "thumbnailOverlayTimeStatusRenderer" in o and
+                o["thumbnailOverlayTimeStatusRenderer"]
+                 .get("style", "") == "LIVE"
+                for o in overlays
+            )
+            if is_live:
+                continue
 
         owner_runs = video.get("ownerText", {}).get("runs", [{}])
         channel_id = (
@@ -258,6 +288,7 @@ async def _search_trending(
             if "itemSectionRenderer" in section:
                 for item in section["itemSectionRenderer"].get("contents", []):
                     video = item.get("videoRenderer")
+        
                     if not video or not video.get("videoId"):
                         continue
                     owner_runs = video.get("ownerText", {}).get("runs", [{}])
@@ -348,8 +379,14 @@ async def get_trending_videos(
     filter_params: Optional[str] = None,
     gl: str = "VN",
     hl: str = "vi",
+    skip_live: bool = True,     
+    skip_trending: bool = False,
 ) -> List[Dict]:
     logger.info(f"Fetching trending gl={gl}")
+
+    if skip_trending:
+        logger.info("Trending crawl skipped by config")
+        return []
 
     collected: List[Dict] = []
     try:
@@ -360,6 +397,11 @@ async def get_trending_videos(
     if not collected:
         logger.warning("Trending HTML returned no videos — falling back to search-by-view-count")
         collected = await _search_trending(proxy, max_results, gl, hl)
+
+    if skip_live:
+        before = len(collected)
+        collected = [v for v in collected if not _is_live_video(v)]
+        logger.info(f"Filtered {before - len(collected)} live videos")
 
     logger.info(f"Trending crawl done: {len(collected)} videos")
     return collected[:max_results]

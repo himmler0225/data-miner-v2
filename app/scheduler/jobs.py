@@ -113,7 +113,7 @@ async def crawl_trending_videos():
         start_time = datetime.now()
 
         proxy = await proxy_manager.get_proxy()
-        videos = await _with_retry(get_trending_videos, proxy=proxy, max_results=100)
+        videos = await _with_retry(get_trending_videos, proxy=proxy, max_results=100, skip_live=True)
 
         if videos:
             await ingest_client.ingest_trending(videos=videos)
