@@ -62,12 +62,13 @@ async def startup_event():
     rate_limit_default = os.getenv("RATE_LIMIT_DEFAULT", "100/hour")
     logger.info(f"Rate limit: {rate_limit_default}")
 
-    try:
-        configure_jobs()
-        start_scheduler()
-        logger.info("Scheduler initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize scheduler: {str(e)}", exc_info=True)
+    # try:
+    #     configure_jobs()
+    #     start_scheduler()
+    #     logger.info("Scheduler initialized successfully")
+    # except Exception as e:
+    #     logger.error(f"Failed to initialize scheduler: {str(e)}", exc_info=True)
+    logger.info("Scheduler disabled — demo mode")
 
     connect_background()
     logger.info("NestJS WebSocket connection initiated")
@@ -76,11 +77,11 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("YouTube Crawler API shutting down...")
-    try:
-        shutdown_scheduler()
-        logger.info("Scheduler stopped successfully")
-    except Exception as e:
-        logger.error(f"Error stopping scheduler: {str(e)}", exc_info=True)
+    # try:
+    #     shutdown_scheduler()
+    #     logger.info("Scheduler stopped successfully")
+    # except Exception as e:
+    #     logger.error(f"Error stopping scheduler: {str(e)}", exc_info=True)
 
     await disconnect_from_nestjs()
     logger.info("NestJS WebSocket disconnected")
