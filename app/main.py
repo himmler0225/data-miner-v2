@@ -15,6 +15,7 @@ from app.middleware import (
 )
 from app.config.logging_config import setup_logging, get_logger
 from app.scheduler import start_scheduler, shutdown_scheduler, configure_jobs
+from app.services.live_ws_client import connect_background, disconnect_from_nestjs
 
 log_level = os.getenv("LOG_LEVEL", "INFO")
 setup_logging(log_level=log_level)
@@ -68,6 +69,9 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to initialize scheduler: {str(e)}", exc_info=True)
 
+    connect_background()
+    logger.info("NestJS WebSocket connection initiated")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -77,6 +81,9 @@ async def shutdown_event():
         logger.info("Scheduler stopped successfully")
     except Exception as e:
         logger.error(f"Error stopping scheduler: {str(e)}", exc_info=True)
+
+    await disconnect_from_nestjs()
+    logger.info("NestJS WebSocket disconnected")
 
 
 @app.get("/health", tags=["Health"])

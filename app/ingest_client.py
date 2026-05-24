@@ -29,9 +29,18 @@ def _safe_int(value) -> Optional[int]:
 
 
 async def ingest_channel(data: ChannelInfo) -> bool:
+    payload = {
+        "channelId": data.get("channel_id"),
+        "channelName": data.get("channel_name"),
+        "handle": data.get("handle") or None,
+        "avatar": data.get("avatar") or None,
+        "banner": data.get("banner") or None,
+        "subscriberCount": data.get("subscriber_count") or None,
+        "description": data.get("description") or None,
+    }
     async with _make_client() as client:
         try:
-            resp = await client.post("/internal/ingest/channel", json=data)
+            resp = await client.post("/internal/ingest/channel", json=payload)
             resp.raise_for_status()
             return True
         except Exception as e:
@@ -44,10 +53,24 @@ async def ingest_search(
     videos: List[SearchVideo],
     sort: str = "relevance",
 ) -> bool:
-    valid_videos = [v for v in videos if v.get("video_id")]
-    if not valid_videos:
+    normalized = []
+    for v in videos:
+        video_id = v.get("video_id")
+        if not video_id:
+            continue
+        normalized.append({
+            "videoId": video_id,
+            "title": v.get("title") or None,
+            "channelId": v.get("channel_id") or None,
+            "channel": v.get("channel") or None,
+            "viewCount": v.get("view_count") or None,
+            "duration": v.get("duration") or None,
+            "publishedTime": v.get("published_time") or None,
+            "thumbnails": v.get("thumbnails") or None,
+        })
+    if not normalized:
         return True
-    payload = {"query": query, "sort": sort, "videos": valid_videos}
+    payload = {"query": query, "sort": sort, "videos": normalized}
 
     async with _make_client() as client:
         try:
@@ -66,18 +89,20 @@ async def ingest_detail(
     # detail has two shapes: error=True with reason, or full video fields.
     if detail.get("error"):
         payload = {
-            "video_id": video_id,
+            "videoId": video_id,
             "error": True,
             "reason": detail.get("reason"),
         }
     else:
         payload = {
-            "video_id": video_id,
+            "videoId": video_id,
             "title": detail.get("title"),
             "author": detail.get("author"),
+            "channelId": detail.get("channel_id") or None,
             "views": _safe_int(detail.get("views")),
-            "length_seconds": _safe_int(detail.get("length_seconds")),
-            "is_live_content": detail.get("is_live_content", False),
+            "lengthSeconds": _safe_int(detail.get("length_seconds")),
+            "isLiveContent": detail.get("is_live_content", False),
+            "description": detail.get("description") or None,
         }
 
     async with _make_client() as client:
@@ -94,10 +119,25 @@ async def ingest_trending(
     videos: List[Dict],
     category: Optional[str] = None,
 ) -> bool:
-    valid_videos = [v for v in videos if v.get("video_id")]
-    if not valid_videos:
+    normalized = []
+    for v in videos:
+        video_id = v.get("video_id")
+        if not video_id:
+            continue
+        normalized.append({
+            "videoId": video_id,
+            "rank": v.get("rank"),
+            "title": v.get("title") or None,
+            "channelId": v.get("channel_id") or None,
+            "channel": v.get("channel") or None,
+            "viewCount": v.get("view_count") or None,
+            "duration": v.get("duration") or None,
+            "publishedTime": v.get("published_time") or None,
+            "thumbnails": v.get("thumbnails") or None,
+        })
+    if not normalized:
         return True
-    payload: Dict = {"videos": valid_videos}
+    payload: Dict = {"videos": normalized}
     if category:
         payload["category"] = category
 
@@ -123,11 +163,11 @@ async def ingest_shorts(videos: List[Dict]) -> bool:
         except (ValueError, TypeError):
             duration = None
         normalized.append({
-            "video_id": video_id,
+            "videoId": video_id,
             "title": v.get("title") or None,
-            "channel_id": v.get("channel_id") or None,
-            "channel_name": v.get("channel_name") or None,
-            "view_count": v.get("view_count") or None,
+            "channelId": v.get("channel_id") or None,
+            "channelName": v.get("channel_name") or None,
+            "viewCount": v.get("view_count") or None,
             "duration": duration,
             "thumbnails": v.get("thumbnails") or None,
         })
@@ -160,20 +200,20 @@ async def ingest_channel_videos(
         if isinstance(thumbnails, dict):
             thumbnails = [thumbnails]
         normalized.append({
-            "video_id": video_id,
+            "videoId": video_id,
             "title": v.get("title") or None,
-            "view_count": _safe_int(v.get("views") or v.get("view_count")),
+            "viewCount": _safe_int(v.get("views") or v.get("view_count")),
             "duration": v.get("duration") or None,
-            "published_time": v.get("public") or v.get("published_time") or None,
+            "publishedTime": v.get("public") or v.get("published_time") or None,
             "thumbnails": thumbnails,
         })
 
     if not normalized:
         return True
 
-    payload: Dict = {"channel_id": channel_id, "videos": normalized}
+    payload: Dict = {"channelId": channel_id, "videos": normalized}
     if channel_name:
-        payload["channel_name"] = channel_name
+        payload["channelName"] = channel_name
 
     async with _make_client() as client:
         try:
@@ -195,10 +235,10 @@ async def ingest_playlists(
         if not playlist_id:
             continue
         normalized.append({
-            "playlist_id": playlist_id,
+            "playlistId": playlist_id,
             "title": p.get("title") or "",
             "thumbnail": p.get("thumbnail") or None,
-            "video_count": _safe_int(p.get("videoCount") or p.get("video_count")),
+            "videoCount": _safe_int(p.get("videoCount") or p.get("video_count")),
         })
 
     if not normalized:
@@ -207,7 +247,7 @@ async def ingest_playlists(
     async with _make_client() as client:
         try:
             resp = await client.post("/internal/ingest/playlists", json={
-                "channel_id": channel_id,
+                "channelId": channel_id,
                 "playlists": normalized,
             })
             resp.raise_for_status()
@@ -217,11 +257,69 @@ async def ingest_playlists(
             return False
 
 
+async def ingest_playlist_items(
+    playlist_id: str,
+    videos: List[Dict],
+) -> bool:
+    normalized = []
+    for i, v in enumerate(videos):
+        video_id = v.get("video_id") or v.get("videoId")
+        if not video_id:
+            continue
+        normalized.append({
+            "videoId": video_id,
+            "title": v.get("title") or "",
+            "position": i,
+            "durationText": v.get("duration") or v.get("duration_text"),
+            "publishedTimeText": v.get("published_time") or v.get("published_time_text"),
+            "thumbnail": v.get("thumbnail"),
+        })
+
+    if not normalized:
+        return True
+
+    async with _make_client() as client:
+        try:
+            resp = await client.post("/internal/ingest/playlist-items", json={
+                "playlistId": playlist_id,
+                "videos": normalized,
+            })
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            logger.warning(f"ingest_playlist_items failed (playlist_id={playlist_id}): {e!r}")
+            return False
+
+
 async def ingest_comments(
     video_id: str,
     comments: List[Comment],
 ) -> bool:
-    payload = {"video_id": video_id, "comments": comments}
+    normalized = []
+    for c in comments:
+        replies = [
+            {
+                "commentId": r.get("comment_id"),
+                "author": r.get("author"),
+                "avatar": r.get("avatar") or None,
+                "content": r.get("content"),
+                "likes": r.get("likes"),
+                "publishedTime": r.get("published_time") or None,
+            }
+            for r in (c.get("replies") or [])
+        ]
+        normalized.append({
+            "commentId": c.get("comment_id"),
+            "author": c.get("author"),
+            "avatar": c.get("avatar") or None,
+            "content": c.get("content"),
+            "likes": c.get("likes"),
+            "repliesCount": c.get("replies_count"),
+            "publishedTime": c.get("published_time") or None,
+            "replies": replies,
+        })
+
+    payload = {"videoId": video_id, "comments": normalized}
 
     async with _make_client() as client:
         try:

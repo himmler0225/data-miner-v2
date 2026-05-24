@@ -68,6 +68,7 @@ async def trending_videos(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
 @router.get("/videos/search", summary="Search Videos")
 @limiter.limit("30/minute")
 async def search_videos(
@@ -107,7 +108,7 @@ async def get_videos_shorts(
 
 @router.get("/videos/live", summary="Get Videos Live")
 async def get_videos_live(
-    q: str = Query(...),
+    q: str = Query("", description="Search keyword (optional — omit for general live feed)"),
     page: int = Query(1, ge=1),
     limit: int = Query(30, ge=1, le=50),
 ):

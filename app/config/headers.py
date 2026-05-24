@@ -83,7 +83,7 @@ def _chrome_version(ua: str) -> str:
         return "131"
 
 
-def get_youtube_headers(visitor_data: str = None) -> dict:
+def get_youtube_headers(visitor_data: str = None, client_version: str = None) -> dict:
     ua = random.choice(USER_AGENTS)
     ua_type = _parse_ua_type(ua)
     accept_language = random.choice(ACCEPT_LANGUAGES)
@@ -102,7 +102,7 @@ def get_youtube_headers(visitor_data: str = None) -> dict:
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "X-Youtube-Client-Name": "1",
-        "X-Youtube-Client-Version": CLIENT_VERSION,
+        "X-Youtube-Client-Version": client_version or CLIENT_VERSION,
     }
 
     if visitor_data:

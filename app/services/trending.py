@@ -2,7 +2,7 @@ import re
 import json
 import random
 from typing import List, Dict, Optional
-from ..utils import get_youtube_api_key, get_context, get_httpx_proxies, create_httpx_client, parse_view_count
+from ..utils import get_youtube_api_key, get_context, get_httpx_proxies, create_httpx_client, parse_view_count, get_client_version, get_visitor_data
 from ..config import get_youtube_headers, get_youtube_api_url
 from ..config.constants import ENDPOINT_BROWSE, ENDPOINT_SEARCH, SORT_VIEW_COUNT, DEFAULT_TIMEOUT
 from ..config.headers import USER_AGENTS
@@ -16,13 +16,7 @@ TRENDING_URL = "https://www.youtube.com/feed/trending"
 
 def _is_live_video(video: Dict) -> bool:
     duration = video.get("duration", "")
-    if not duration:
-        return True 
-    
-    if duration in ("0:00", "00:00", ""):
-        return True
-        
-    return False
+    return duration in ("0:00", "00:00")
 
 
 def extract_videos(items: List[Dict], rank_offset: int = 0, skip_live: bool = True) -> List[Dict]:
@@ -144,6 +138,111 @@ def _make_session(proxy: Optional[str], gl: str, hl: str) -> httpx.AsyncClient:
     return httpx.AsyncClient(**kwargs)
 
 
+async def _api_trending(
+    proxy: Optional[str],
+    max_results: int,
+    filter_params: Optional[str],
+    gl: str,
+    hl: str,
+) -> List[Dict]:
+    """Lấy trending qua Innertube JSON API (browseId=FEtrending).
+    Hoạt động từ cả datacenter IP, không cần parse HTML."""
+    api_key = await get_youtube_api_key(proxy=proxy)
+    headers = get_youtube_headers(
+        visitor_data=get_visitor_data(),
+        client_version=get_client_version(),
+    )
+    browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
+
+    context = get_context()
+    context["client"]["gl"] = gl
+    context["client"]["hl"] = hl
+
+    payload: dict = {"context": context, "browseId": "FEtrending"}
+    if filter_params:
+        payload["params"] = filter_params
+
+    collected: List[Dict] = []
+    continuation: Optional[str] = None
+
+    async with create_httpx_client(proxy=proxy, headers=headers) as client:
+        resp = await client.post(browse_url, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Cấu trúc JSON giống ytInitialData
+        contents = data.get("contents", {})
+        tabs = (
+            contents
+            .get("twoColumnBrowseResultsRenderer", {})
+            .get("tabs", [])
+        )
+        if not tabs:
+            raise YouTubeStructureChangedError(
+                "API trending: twoColumnBrowseResultsRenderer.tabs missing",
+                context={"contents_keys": list(contents.keys())},
+            )
+
+        first_tab = tabs[0].get("tabRenderer", {})
+        tab_content = first_tab.get("content", {})
+
+        if "richGridRenderer" in tab_content:
+            renderers = tab_content["richGridRenderer"].get("contents", [])
+        else:
+            renderers = tab_content.get("sectionListRenderer", {}).get("contents", [])
+
+        for item in renderers:
+            if "richItemRenderer" in item:
+                video = item["richItemRenderer"].get("content", {})
+                collected += extract_videos([video], rank_offset=len(collected))
+            elif "richSectionRenderer" in item or "shelfRenderer" in item or "carouselRenderer" in item:
+                collected += extract_videos_from_item(item, rank_offset=len(collected))
+            elif "continuationItemRenderer" in item:
+                continuation = (
+                    item["continuationItemRenderer"]
+                    .get("continuationEndpoint", {})
+                    .get("continuationCommand", {})
+                    .get("token")
+                )
+            if len(collected) >= max_results:
+                return collected[:max_results]
+
+        # Pagination
+        while continuation and len(collected) < max_results:
+            cont_payload = {
+                "context": context,
+                "continuation": continuation,
+            }
+            resp = await client.post(browse_url, json=cont_payload)
+            resp.raise_for_status()
+            cont_data = resp.json()
+
+            items = (
+                cont_data.get("onResponseReceivedActions", [{}])[0]
+                .get("appendContinuationItemsAction", {})
+                .get("continuationItems", [])
+            )
+            continuation = None
+            for item in items:
+                if "richItemRenderer" in item:
+                    video = item["richItemRenderer"].get("content", {})
+                    collected += extract_videos([video], rank_offset=len(collected))
+                elif "itemSectionRenderer" in item:
+                    for sub in item["itemSectionRenderer"].get("contents", []):
+                        collected += extract_videos_from_item(sub, rank_offset=len(collected))
+                elif "continuationItemRenderer" in item:
+                    continuation = (
+                        item["continuationItemRenderer"]
+                        .get("continuationEndpoint", {})
+                        .get("continuationCommand", {})
+                        .get("token")
+                    )
+                if len(collected) >= max_results:
+                    return collected[:max_results]
+
+    return collected
+
+
 async def _html_trending(
     proxy: Optional[str],
     max_results: int,
@@ -201,8 +300,11 @@ async def _html_trending(
             return collected[:max_results]
 
     if continuation and len(collected) < max_results:
-        api_headers = get_youtube_headers()
         api_key = await get_youtube_api_key(proxy=proxy)
+        api_headers = get_youtube_headers(
+            visitor_data=get_visitor_data(),
+            client_version=get_client_version(),
+        )
         browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
         ua = api_headers.get("User-Agent")
 
@@ -254,8 +356,11 @@ async def _search_trending(
     hl: str,
 ) -> List[Dict]:
     # Datacenter IPs get feedNudgeRenderer instead of trending — search by view count as proxy.
-    api_headers = get_youtube_headers()
     api_key = await get_youtube_api_key(proxy=proxy)
+    api_headers = get_youtube_headers(
+        visitor_data=get_visitor_data(),
+        client_version=get_client_version(),
+    )
     search_url = get_youtube_api_url(ENDPOINT_SEARCH, api_key)
 
     context = get_context(original_url=TRENDING_URL, user_agent=api_headers.get("User-Agent"))
@@ -389,19 +494,42 @@ async def get_trending_videos(
         return []
 
     collected: List[Dict] = []
-    try:
-        collected = await _html_trending(proxy, max_results, filter_params, gl, hl)
-    except YouTubeStructureChangedError as e:
-        logger.warning(f"Trending HTML structure changed ({e}) — falling back to search-by-view-count")
 
+    # 1. Innertube JSON API — chỉ chạy khi có proxy; datacenter IP bị 400 từ FEtrending
+    if proxy:
+        try:
+            collected = await _api_trending(proxy, max_results, filter_params, gl, hl)
+            if collected:
+                logger.info(f"[trending] API method: {len(collected)} videos")
+        except YouTubeStructureChangedError as e:
+            logger.warning(f"[trending] API structure changed: {e}")
+        except Exception as e:
+            logger.warning(f"[trending] API failed: {e!r}")
+    else:
+        logger.info("[trending] no proxy — skipping Innertube browse, using fallback")
+
+    # 2. HTML fallback (residential IP / proxy)
     if not collected:
-        logger.warning("Trending HTML returned no videos — falling back to search-by-view-count")
+        try:
+            collected = await _html_trending(proxy, max_results, filter_params, gl, hl)
+            if collected:
+                logger.info(f"[trending] HTML method: {len(collected)} videos")
+        except YouTubeStructureChangedError as e:
+            logger.warning(f"[trending] HTML structure changed: {e}")
+        except Exception as e:
+            logger.warning(f"[trending] HTML failed: {e!r}")
+
+    # 3. Search by view count — last resort
+    if not collected:
+        logger.warning("[trending] all methods failed — falling back to search-by-view-count")
         collected = await _search_trending(proxy, max_results, gl, hl)
+        logger.info(f"[trending] search fallback: {len(collected)} videos")
 
     if skip_live:
         before = len(collected)
         collected = [v for v in collected if not _is_live_video(v)]
-        logger.info(f"Filtered {before - len(collected)} live videos")
+        if before != len(collected):
+            logger.info(f"[trending] filtered {before - len(collected)} live videos")
 
-    logger.info(f"Trending crawl done: {len(collected)} videos")
+    logger.info(f"[trending] done: {len(collected)} videos")
     return collected[:max_results]

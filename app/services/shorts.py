@@ -122,7 +122,6 @@ def _find_reel_item_renderers(obj: Any) -> List[tuple]:
             items.extend(_find_reel_item_renderers(item))
     return items
 
-
 def _parse_reel_item_renderer(item_type: str, item: dict) -> Optional[dict]:
     if item_type == "reel":
         video_id = item.get("videoId")
@@ -149,6 +148,7 @@ def _parse_reel_item_renderer(item_type: str, item: dict) -> Optional[dict]:
         video_id = nav.get("videoId")
         if not video_id:
             return None
+        print(item)
         overlay    = item.get("overlayMetadata", {})
         title      = overlay.get("primaryText", {}).get("content", "")
         views      = overlay.get("secondaryText", {}).get("content", "")

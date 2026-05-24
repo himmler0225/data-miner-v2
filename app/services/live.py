@@ -26,7 +26,7 @@ def extract_live_videos(items: List[Dict]) -> List[Dict]:
         })
     return videos
 
-async def get_all_live_videos(q: str, proxy: str = None, max_results: int = 100) -> List[Dict]:
+async def get_all_live_videos(q: str = "", proxy: str = None, max_results: int = 100) -> List[Dict]:
     API_KEY = await get_youtube_api_key(proxy=proxy)
     SEARCH_URL = get_youtube_api_url(ENDPOINT_SEARCH, API_KEY)
     headers = get_youtube_headers()

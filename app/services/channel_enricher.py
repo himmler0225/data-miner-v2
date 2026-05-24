@@ -3,14 +3,17 @@ from typing import Optional, Set
 
 from .channel_info import get_channel_info
 from .channel import get_channel_videos
-from .playlist import get_playlist_videos
+from .playlist import get_playlist_videos, get_videos_from_playlist
 from .. import ingest_client
 from ..config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Max channels enriched concurrently — each channel fires 3 parallel HTTP calls.
+# Max channels enriched concurrently.
 _CHANNEL_CONCURRENCY = 2
+
+# Max playlist item-fetches running in parallel per channel.
+_PLAYLIST_ITEM_CONCURRENCY = 2
 
 
 async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
@@ -33,8 +36,37 @@ async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
     async def _playlists() -> None:
         try:
             playlists = await get_playlist_videos(channel_id, proxy=proxy)
-            if playlists:
-                await ingest_client.ingest_playlists(channel_id=channel_id, playlists=playlists)
+            if not playlists:
+                return
+
+            sem = asyncio.Semaphore(_PLAYLIST_ITEM_CONCURRENCY)
+
+            async def _fetch_and_ingest(playlist_id: str) -> None:
+                async with sem:
+                    try:
+                        items = await get_videos_from_playlist(playlist_id, proxy=proxy)
+                        if not items:
+                            return
+                        # Only save playlist metadata when we have real items
+                        playlist_meta = next(
+                            (p for p in playlists if p.get("playlistId") == playlist_id), {}
+                        )
+                        await ingest_client.ingest_playlists(
+                            channel_id=channel_id, playlists=[playlist_meta]
+                        )
+                        await ingest_client.ingest_playlist_items(
+                            playlist_id=playlist_id, videos=items
+                        )
+                    except Exception as e:
+                        logger.warning(f"[enricher] playlist_items {playlist_id}: {e!r}")
+
+            tasks = [
+                _fetch_and_ingest(p["playlistId"])
+                for p in playlists
+                if p.get("playlistId")
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
         except Exception as e:
             logger.warning(f"[enricher] playlists {channel_id}: {e!r}")
 

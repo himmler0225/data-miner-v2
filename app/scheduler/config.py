@@ -7,6 +7,7 @@ from app.scheduler.jobs import (
     crawl_shorts_videos,
     crawl_location_videos,
     crawl_popular_keywords,
+    crawl_live_videos,
     cleanup_old_data,
     health_check_job,
 )
@@ -66,6 +67,17 @@ def configure_jobs():
         max_instances=1,
     )
     logger.info(f"Scheduled job: Crawl Popular Keywords (cron: {keywords_schedule})")
+
+    live_schedule = os.getenv("LIVE_CRON", "*/5 * * * *")
+    scheduler.add_job(
+        crawl_live_videos,
+        trigger=CronTrigger.from_crontab(live_schedule),
+        id="crawl_live",
+        name="Crawl Live Videos",
+        replace_existing=True,
+        max_instances=1,
+    )
+    logger.info(f"Scheduled job: Crawl Live Videos (cron: {live_schedule})")
 
     cleanup_schedule = os.getenv("CLEANUP_CRON", "0 2 * * 0")
     scheduler.add_job(

@@ -103,20 +103,39 @@ def _parse_player_response(data: dict, video_id: str) -> dict:
 
     video_details = data.get("videoDetails", {})
     streaming_data = data.get("streamingData", {})
+    
+    microformat = (
+        data.get("microformat", {})
+            .get("playerMicroformatRenderer", {})
+    )
+
+    description = (
+        video_details.get("shortDescription")
+        or microformat.get("description", {}).get("simpleText")
+        or ""
+    )
+
+    thumbnails = video_details.get("thumbnail", {}).get("thumbnails", [])
+    if not thumbnails:
+        vid = video_details.get("videoId") or video_id
+        thumbnails = [{"url": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"}]
+
     return {
         "video_id": video_details.get("videoId") or video_id,
         "title": video_details.get("title"),
         "author": video_details.get("author"),
+        "channel_id": video_details.get("channelId") or None,
+        "description": description,
         "length_seconds": video_details.get("lengthSeconds"),
         "views": parse_view_count(video_details.get("viewCount")),
         "is_live_content": video_details.get("isLiveContent"),
+        "thumbnails": thumbnails,
         "formats": streaming_data.get("formats", []),
         "adaptive_formats": streaming_data.get("adaptiveFormats", []),
     }
 
 
 async def get_video_detail(video_id: str, proxy: str = None) -> dict:
-    # Try watch page first (most reliable — no API key, real browser fingerprint)
     data = await _get_via_watch_page(video_id, proxy=proxy)
 
     if data is None:

@@ -1,4 +1,5 @@
 import asyncio
+import os
 import random
 from datetime import datetime
 from typing import Any, Callable, Coroutine
@@ -6,7 +7,11 @@ from app.services.location import get_videos_by_region
 from app.services.search import search_youtube
 from app.services.trending import get_trending_videos
 from app.services.shorts import get_shorts_feed
+from app.services.detail import get_video_detail
+from app.services.comment import get_video_comments
+from app.services.live import get_all_live_videos
 from app.services.channel_enricher import enrich_channels_batch
+from app.services.live_ws_client import push_live_videos
 from app.exceptions import YouTubeStructureChangedError
 from app.config.logging_config import get_logger
 from app.config.urls import proxy_manager
@@ -18,8 +23,8 @@ logger = get_logger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
 _failure_counts: dict[str, int] = {}
 
-# Max concurrent YouTube requests per batch job.
-BATCH_CONCURRENCY = 3
+# Max concurrent YouTube requests per batch job (tunable via env).
+BATCH_CONCURRENCY = int(os.getenv("BATCH_CONCURRENCY", "5"))
 
 
 async def _with_retry(
@@ -57,6 +62,14 @@ def _record_failure(job_id: str) -> int:
     count = _failure_counts.get(job_id, 0) + 1
     _failure_counts[job_id] = count
     return count
+
+
+def reset_circuit(job_id: str) -> None:
+    _failure_counts.pop(job_id, None)
+
+
+def get_failure_counts() -> dict[str, int]:
+    return dict(_failure_counts)
 
 
 # gl (country code) drives regional targeting — YouTube ignores lat/lng.
@@ -119,6 +132,11 @@ async def crawl_trending_videos():
         if videos:
             await ingest_client.ingest_trending(videos=videos)
 
+            channel_ids = {v["channel_id"] for v in videos if v.get("channel_id")}
+            if channel_ids:
+                logger.info(f"[trending] enriching {len(channel_ids)} channels in parallel")
+                await enrich_channels_batch(channel_ids, proxy=proxy)
+
         duration = (datetime.now() - start_time).total_seconds()
         _record_success(job_id)
         logger.info(
@@ -156,23 +174,88 @@ async def crawl_shorts_videos():
         start_time = datetime.now()
 
         proxy = await proxy_manager.get_proxy()
-        videos = await _with_retry(get_shorts_feed, proxy=proxy, max_results=50)
 
-        if videos:
-            await ingest_client.ingest_shorts(videos=videos)
+        # 1. Lấy video_ids từ feed (bỏ data feed, chỉ giữ id)
+        feed = await _with_retry(get_shorts_feed, proxy=proxy, max_results=50)
+        video_ids = list({v["video_id"] for v in feed if v.get("video_id")})
+        logger.info(f"[shorts] {len(video_ids)} unique video_ids from feed")
 
-            channel_ids = {v["channel_id"] for v in videos if v.get("channel_id")}
-            if channel_ids:
-                logger.info(f"[shorts] enriching {len(channel_ids)} channels in parallel")
-                await enrich_channels_batch(channel_ids, proxy=proxy)
+        if not video_ids:
+            _record_success(job_id)
+            return {"success": True, "total_videos": 0, "duration": 0}
+
+        # 2. Crawl detail + comments song song (bounded concurrency)
+        sem = asyncio.Semaphore(BATCH_CONCURRENCY)
+
+        async def _crawl_one(video_id: str):
+            async with sem:
+                detail = await _with_retry(get_video_detail, video_id, proxy=proxy)
+                comments = []
+                if not detail.get("error"):
+                    try:
+                        comments = await _with_retry(
+                            get_video_comments, video_id, proxy=proxy, max_comments=50
+                        )
+                    except Exception as e:
+                        logger.warning(f"[shorts] comments {video_id}: {e!r}")
+                return video_id, detail, comments
+
+        crawl_results = await asyncio.gather(
+            *[_crawl_one(vid) for vid in video_ids], return_exceptions=True
+        )
+
+        # 3. Tổng hợp kết quả
+        enriched: list[dict] = []
+        channel_ids: set[str] = set()
+        skipped = 0
+
+        for result in crawl_results:
+            if isinstance(result, Exception):
+                skipped += 1
+                continue
+            video_id, detail, comments = result
+            if detail.get("error"):
+                skipped += 1
+                continue
+
+            cid = detail.get("channel_id")
+            if cid:
+                channel_ids.add(cid)
+
+            enriched.append({
+                "video_id": video_id,
+                "title": detail.get("title") or "",
+                "channel_id": cid,
+                "channel_name": detail.get("author") or "",
+                "view_count": detail.get("views"),
+                "duration": detail.get("length_seconds"),
+                "thumbnails": detail.get("thumbnails"),
+                "url": f"https://www.youtube.com/shorts/{video_id}",
+            })
+
+            if comments:
+                await ingest_client.ingest_comments(video_id, comments)
+
+        # 4. Ingest shorts đã enrich
+        if enriched:
+            await ingest_client.ingest_shorts(videos=enriched)
+
+        # 5. Enrich channels (info + playlists)
+        if channel_ids:
+            logger.info(f"[shorts] enriching {len(channel_ids)} channels")
+            await enrich_channels_batch(channel_ids, proxy=proxy)
 
         duration = (datetime.now() - start_time).total_seconds()
         _record_success(job_id)
         logger.info(
             "Shorts crawl completed",
-            extra={"extra_data": {"total_videos": len(videos), "duration_seconds": duration}},
+            extra={"extra_data": {
+                "total_videos": len(enriched),
+                "skipped": skipped,
+                "duration_seconds": duration,
+            }},
         )
-        return {"success": True, "total_videos": len(videos), "duration": duration}
+        return {"success": True, "total_videos": len(enriched), "skipped": skipped, "duration": duration}
 
     except YouTubeStructureChangedError as e:
         count = _record_failure(job_id)
@@ -205,6 +288,7 @@ async def crawl_location_videos():
         sem = asyncio.Semaphore(BATCH_CONCURRENCY)
         total_videos = 0
         skipped = []
+        all_channel_ids: set[str] = set()
 
         async def _crawl_city(target: dict) -> int:
             city = target["name"]
@@ -226,6 +310,7 @@ async def crawl_location_videos():
                         videos=search_videos,
                         sort="relevance",
                     )
+                    all_channel_ids.update(v["channel_id"] for v in videos if v.get("channel_id"))
                     logger.info(f"[{city}] crawled {len(videos)} videos")
                     return len(videos)
                 return 0
@@ -241,6 +326,11 @@ async def crawl_location_videos():
                 skipped.append(target["name"])
             else:
                 total_videos += result
+
+        if all_channel_ids:
+            logger.info(f"[location] enriching {len(all_channel_ids)} channels in parallel")
+            proxy = await proxy_manager.get_proxy()
+            await enrich_channels_batch(all_channel_ids, proxy=proxy)
 
         duration = (datetime.now() - start_time).total_seconds()
         _record_success(job_id)
@@ -288,6 +378,7 @@ async def crawl_popular_keywords():
 
         sem = asyncio.Semaphore(BATCH_CONCURRENCY)
         skipped = []
+        all_channel_ids: set[str] = set()
 
         async def _crawl_keyword(keyword: str) -> int:
             async with sem:
@@ -301,6 +392,7 @@ async def crawl_popular_keywords():
                     proxy=proxy,
                 )
                 await ingest_client.ingest_search(query=keyword, videos=videos, sort="upload_date")
+                all_channel_ids.update(v["channel_id"] for v in videos if v.get("channel_id"))
                 logger.info(f"Crawled {len(videos)} videos for '{keyword}'")
                 return len(videos)
 
@@ -317,6 +409,11 @@ async def crawl_popular_keywords():
                 counts[keyword] = 0
             else:
                 counts[keyword] = result
+
+        if all_channel_ids:
+            logger.info(f"[keywords] enriching {len(all_channel_ids)} channels in parallel")
+            proxy = await proxy_manager.get_proxy()
+            await enrich_channels_batch(all_channel_ids, proxy=proxy)
 
         total_videos = sum(counts.values())
         duration = (datetime.now() - start_time).total_seconds()
@@ -350,6 +447,47 @@ async def cleanup_old_data():
         return {"success": True, "duration": duration}
     except Exception as e:
         logger.error(f"Error during data cleanup: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+async def crawl_live_videos():
+    job_id = "crawl_live"
+
+    if _is_circuit_open(job_id):
+        logger.critical(
+            f"Job '{job_id}' is disabled after {MAX_CONSECUTIVE_FAILURES} "
+            "consecutive failures — manual intervention required"
+        )
+        return {"success": False, "error": "circuit_open"}
+
+    try:
+        logger.info("Starting live video crawl...")
+        start_time = datetime.now()
+
+        proxy = await proxy_manager.get_proxy()
+        videos = await _with_retry(get_all_live_videos, q="", proxy=proxy, max_results=50)
+
+        await push_live_videos(videos)
+
+        duration = (datetime.now() - start_time).total_seconds()
+        _record_success(job_id)
+        logger.info(
+            "Live crawl completed",
+            extra={"extra_data": {"total_videos": len(videos), "duration_seconds": duration}},
+        )
+        return {"success": True, "total_videos": len(videos), "duration": duration}
+
+    except YouTubeStructureChangedError as e:
+        count = _record_failure(job_id)
+        logger.critical(
+            f"YouTube structure changed in live crawl: {e}",
+            extra={"extra_data": {"consecutive_failures": count, "context": e.context}},
+        )
+        return {"success": False, "error": "structure_changed", "detail": str(e)}
+
+    except Exception as e:
+        count = _record_failure(job_id)
+        logger.error(f"Error during live crawl (failure #{count}): {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 

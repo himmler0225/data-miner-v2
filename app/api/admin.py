@@ -1,6 +1,6 @@
 import asyncio
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, Depends
 from app.middleware import verify_api_key
 from app.utils import get_youtube_api_key, get_context, create_httpx_client
 from app.config import get_youtube_headers, get_youtube_api_url
@@ -12,6 +12,9 @@ from app.scheduler.jobs import (
     crawl_popular_keywords,
     cleanup_old_data,
     health_check_job,
+    reset_circuit,
+    get_failure_counts,
+    MAX_CONSECUTIVE_FAILURES,
 )
 from app.config.urls import proxy_manager
 from app.config.logging_config import get_logger
@@ -19,33 +22,43 @@ from app.config.logging_config import get_logger
 router = APIRouter(prefix="/admin", dependencies=[Depends(verify_api_key)])
 logger = get_logger(__name__)
 
-_running_jobs: set[str] = set()
+# Tracks live asyncio Tasks so they can be cancelled
+_running_tasks: dict[str, asyncio.Task] = {}
 
 
-async def _run_job(job_id: str, coro):
-    if job_id in _running_jobs:
-        return {"status": "already_running", "job": job_id}
-
-    _running_jobs.add(job_id)
+async def _run_job(job_id: str, coro_func):
     try:
-        result = await coro()
-        return {"status": "done", "job": job_id, "result": result}
+        logger.info(f"Job '{job_id}' started")
+        result = await coro_func()
+        logger.info(f"Job '{job_id}' completed: {result}")
+        return result
+    except asyncio.CancelledError:
+        logger.warning(f"Job '{job_id}' was cancelled")
+        raise
     except Exception as e:
-        logger.error(f"Manual job {job_id} failed: {e}", exc_info=True)
-        return {"status": "error", "job": job_id, "error": str(e)}
+        logger.error(f"Job '{job_id}' failed: {e}", exc_info=True)
+        raise
     finally:
-        _running_jobs.discard(job_id)
+        _running_tasks.pop(job_id, None)
 
+
+def _start_job(job_id: str, coro_func) -> dict:
+    if job_id in _running_tasks and not _running_tasks[job_id].done():
+        return {"status": "already_running", "job": job_id}
+    task = asyncio.create_task(_run_job(job_id, coro_func))
+    _running_tasks[job_id] = task
+    return {"status": "started", "job": job_id}
+
+
+# ── Debug / proxy ─────────────────────────────────────────────────────────────
 
 @router.get("/proxy/debug")
 async def proxy_debug():
-    """Raw test: gọi thẳng proxyxoay.shop API với key đầu tiên, trả về response gốc."""
-    import os, httpx
+    import os
     keys_raw = os.getenv("PROXY_KEYS", "")
     keys = [k.strip() for k in keys_raw.split(",") if k.strip()]
     if not keys:
         return {"error": "PROXY_KEYS trống trong .env", "keys_raw": keys_raw}
-
     key = keys[0]
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -60,7 +73,6 @@ async def proxy_debug():
 
 @router.get("/debug/location")
 async def debug_location(lat: float = 10.8231, lng: float = 106.6297):
-    """Gọi YouTube search API với location và trả về raw response để debug cấu trúc."""
     proxy = await proxy_manager.get_proxy()
     try:
         api_key = await get_youtube_api_key(proxy=proxy)
@@ -76,8 +88,6 @@ async def debug_location(lat: float = 10.8231, lng: float = 106.6297):
         async with create_httpx_client(proxy=proxy, headers=headers) as client:
             resp = await client.post(search_url, json=payload)
             data = resp.json()
-
-        # Trả về top-level keys + 3000 ký tự đầu để không bị timeout
         import json
         return {
             "status_code": resp.status_code,
@@ -91,17 +101,14 @@ async def debug_location(lat: float = 10.8231, lng: float = 106.6297):
 
 @router.get("/proxy/status")
 async def proxy_status():
-    """Xem trạng thái cache của từng proxy key."""
     return {"proxies": proxy_manager.status()}
 
 
 @router.get("/proxy/test")
 async def test_proxy():
-    """Lấy 1 proxy từ API rồi test qua httpbin.org/ip."""
     proxy_url = await proxy_manager.get_proxy()
     if not proxy_url:
         return {"status": "error", "detail": "Không lấy được proxy — kiểm tra PROXY_KEYS trong .env"}
-
     try:
         async with httpx.AsyncClient(proxies=proxy_url, timeout=10) as client:
             resp = await client.get("http://httpbin.org/ip")
@@ -111,83 +118,68 @@ async def test_proxy():
         return {"status": "error", "proxy": proxy_url, "error": repr(e)}
 
 
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+
 @router.get("/jobs")
 async def list_jobs():
-    """Danh sách jobs và trạng thái hiện tại."""
     from app.scheduler.scheduler import get_scheduler
     scheduler = get_scheduler()
+    failures = get_failure_counts()
     jobs = []
     for job in scheduler.get_jobs():
         next_run = getattr(job, "next_run_time", None)
+        failure_count = failures.get(job.id, 0)
+        task = _running_tasks.get(job.id)
         jobs.append({
             "id": job.id,
             "name": job.name,
             "next_run": next_run.isoformat() if next_run else None,
-            "running": job.id in _running_jobs,
+            "running": task is not None and not task.done(),
+            "failure_count": failure_count,
+            "circuit_open": failure_count >= MAX_CONSECUTIVE_FAILURES,
         })
-    return {"jobs": jobs, "running": list(_running_jobs)}
+    return {"jobs": jobs}
 
 
 @router.post("/jobs/trending")
-async def trigger_trending(background_tasks: BackgroundTasks):
-    """Trigger crawl trending videos ngay lập tức (chạy background)."""
-    if "crawl_trending" in _running_jobs:
-        return {"status": "already_running", "job": "crawl_trending"}
-
-    async def _run():
-        await _run_job("crawl_trending", crawl_trending_videos)
-
-    background_tasks.add_task(_run)
-    return {"status": "started", "job": "crawl_trending"}
+async def trigger_trending():
+    return _start_job("crawl_trending", crawl_trending_videos)
 
 
 @router.post("/jobs/shorts")
-async def trigger_shorts(background_tasks: BackgroundTasks):
-    if "crawl_shorts" in _running_jobs:
-        return {"status": "already_running", "job": "crawl_shorts"}
-
-    async def _run():
-        await _run_job("crawl_shorts", crawl_shorts_videos)
-
-    background_tasks.add_task(_run)
-    return {"status": "started", "job": "crawl_shorts"}
+async def trigger_shorts():
+    return _start_job("crawl_shorts", crawl_shorts_videos)
 
 
 @router.post("/jobs/location")
-async def trigger_location(background_tasks: BackgroundTasks):
-    """Trigger crawl location videos ngay lập tức (chạy background, duyệt 28 thành phố toàn cầu)."""
-    if "crawl_location" in _running_jobs:
-        return {"status": "already_running", "job": "crawl_location"}
-
-    async def _run():
-        await _run_job("crawl_location", crawl_location_videos)
-
-    background_tasks.add_task(_run)
-    return {"status": "started", "job": "crawl_location"}
+async def trigger_location():
+    return _start_job("crawl_location", crawl_location_videos)
 
 
 @router.post("/jobs/keywords")
-async def trigger_keywords(background_tasks: BackgroundTasks):
-    """Trigger crawl popular keywords ngay lập tức (chạy background)."""
-    if "crawl_keywords" in _running_jobs:
-        return {"status": "already_running", "job": "crawl_keywords"}
-
-    async def _run():
-        await _run_job("crawl_keywords", crawl_popular_keywords)
-
-    background_tasks.add_task(_run)
-    return {"status": "started", "job": "crawl_keywords"}
+async def trigger_keywords():
+    return _start_job("crawl_keywords", crawl_popular_keywords)
 
 
 @router.post("/jobs/cleanup")
-async def trigger_cleanup(background_tasks: BackgroundTasks):
-    """Trigger cleanup ngay lập tức."""
-    background_tasks.add_task(cleanup_old_data)
-    return {"status": "started", "job": "cleanup_data"}
+async def trigger_cleanup():
+    return _start_job("cleanup_data", cleanup_old_data)
 
 
 @router.post("/jobs/health")
 async def trigger_health():
-    """Chạy health check ngay, trả về kết quả."""
     result = await health_check_job()
     return {"status": "done", "result": result}
+
+
+@router.post("/jobs/{job_id}/reset")
+async def reset_job(job_id: str):
+    """Cancel job đang chạy + reset circuit breaker."""
+    task = _running_tasks.pop(job_id, None)
+    cancelled = False
+    if task and not task.done():
+        task.cancel()
+        cancelled = True
+        logger.info(f"Job '{job_id}' cancelled via reset endpoint")
+    reset_circuit(job_id)
+    return {"status": "reset", "job": job_id, "cancelled": cancelled}
