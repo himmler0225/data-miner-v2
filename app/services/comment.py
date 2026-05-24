@@ -192,10 +192,8 @@ async def get_video_comments(video_id: str, proxy: str = None, max_comments: int
 
         continuation_token = extract_comment_continuation_token(data)
         if not continuation_token:
-            raise YouTubeStructureChangedError(
-                "No comment continuation token found — structure may have changed",
-                context={"video_id": video_id, "top_keys": list(data.keys())}
-            )
+            logger.warning(f"No comment continuation token for {video_id} — comments may be disabled or hidden")
+            return []
 
         while continuation_token and len(comments) < max_comments:
             payload = {

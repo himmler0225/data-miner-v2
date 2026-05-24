@@ -63,7 +63,7 @@ async def ingest_search(
             "title": v.get("title") or None,
             "channelId": v.get("channel_id") or None,
             "channel": v.get("channel") or None,
-            "viewCount": v.get("view_count") or None,
+            "viewCount": v.get("view_count"),  # keep 0, don't coerce to None
             "duration": v.get("duration") or None,
             "publishedTime": v.get("published_time") or None,
             "thumbnails": v.get("thumbnails") or None,
@@ -103,6 +103,7 @@ async def ingest_detail(
             "lengthSeconds": _safe_int(detail.get("length_seconds")),
             "isLiveContent": detail.get("is_live_content", False),
             "description": detail.get("description") or None,
+            "thumbnails": detail.get("thumbnails") or None,
         }
 
     async with _make_client() as client:
@@ -130,7 +131,7 @@ async def ingest_trending(
             "title": v.get("title") or None,
             "channelId": v.get("channel_id") or None,
             "channel": v.get("channel") or None,
-            "viewCount": v.get("view_count") or None,
+            "viewCount": v.get("view_count"),  # keep 0, don't coerce to None
             "duration": v.get("duration") or None,
             "publishedTime": v.get("published_time") or None,
             "thumbnails": v.get("thumbnails") or None,
@@ -165,9 +166,10 @@ async def ingest_shorts(videos: List[Dict]) -> bool:
         normalized.append({
             "videoId": video_id,
             "title": v.get("title") or None,
+            "url": v.get("url") or f"https://www.youtube.com/shorts/{video_id}",
             "channelId": v.get("channel_id") or None,
             "channelName": v.get("channel_name") or None,
-            "viewCount": v.get("view_count") or None,
+            "viewCount": v.get("view_count"),  # keep 0, don't coerce to None
             "duration": duration,
             "thumbnails": v.get("thumbnails") or None,
         })
@@ -202,7 +204,7 @@ async def ingest_channel_videos(
         normalized.append({
             "videoId": video_id,
             "title": v.get("title") or None,
-            "viewCount": _safe_int(v.get("views") or v.get("view_count")),
+            "viewCount": _safe_int(v.get("views") if v.get("views") is not None else v.get("view_count")),
             "duration": v.get("duration") or None,
             "publishedTime": v.get("public") or v.get("published_time") or None,
             "thumbnails": thumbnails,
