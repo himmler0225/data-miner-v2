@@ -31,7 +31,6 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
-# TODO: update allowed origins for production
 origins = [
     "http://localhost:3000",
     "http://localhost:8000",

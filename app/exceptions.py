@@ -3,11 +3,6 @@ class CrawlerBaseError(Exception):
 
 
 class YouTubeStructureChangedError(CrawlerBaseError):
-    """
-    Raised when YouTube's JSON response structure changes (missing/moved keys).
-    Do NOT retry — retries will fail identically. Alert developer to fix parsing.
-    """
-
     def __init__(self, message: str, context: dict = None):
         super().__init__(message)
         self.context = context or {}
@@ -20,5 +15,4 @@ class YouTubeStructureChangedError(CrawlerBaseError):
 
 
 class CrawlNetworkError(CrawlerBaseError):
-    """Transient network error (timeout, connection refused, 429). Safe to retry."""
     pass

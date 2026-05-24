@@ -6,28 +6,19 @@ import httpx
 from typing import Optional
 from app.config.logging_config import get_logger
 
-# Nhà mạng hỗ trợ
 _NHA_MANG = ["Random", "viettel", "fpt", "vnpt"]
 
-# Tỉnh thành: 0 = Random, các giá trị khác theo danh sách proxyxoay.shop
 _TINH_THANH = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 logger = get_logger(__name__)
 
 PROXY_API_URL = "https://proxyxoay.shop/api/get.php"
 
-
 class ProxyManager:
-    """
-    Quản lý proxy xoay từ proxyxoay.shop.
-    - Rotate qua nhiều key, mỗi key giới hạn 60s/lần gọi API.
-    - Cache proxy đến khi hết hạn (TTL từ response).
-    """
-
     def __init__(self, keys: list):
         self._keys = keys
-        self._cache: dict = {}      # key -> {proxy_url, expires_at}
-        self._last_fetch: dict = {} # key -> timestamp của lần gọi API gần nhất
+        self._cache: dict = {}
+        self._last_fetch: dict = {}
         self._index = 0
         self._lock = asyncio.Lock()
 
@@ -40,12 +31,10 @@ class ProxyManager:
                 key = self._keys[self._index % len(self._keys)]
                 self._index += 1
 
-                # Dùng cache nếu proxy chưa hết hạn
                 cached = self._cache.get(key)
                 if cached and time.time() < cached["expires_at"]:
                     return cached["proxy_url"]
 
-                # Giới hạn 60s/lần gọi API mỗi key
                 last = self._last_fetch.get(key, 0)
                 if time.time() - last < 62:
                     continue
@@ -72,7 +61,6 @@ class ProxyManager:
                 logger.warning(f"Proxy API [{key[:8]}]: status={data.get('status')} — {data.get('message')}")
                 return None
 
-            # Format: "host:port:user:pass" — user/pass có thể rỗng (dùng IP whitelist)
             raw = data.get("proxyhttp", "")
             parts = raw.split(":")
             if len(parts) < 2:
@@ -88,7 +76,6 @@ class ProxyManager:
             else:
                 proxy_url = f"http://{host}:{port}"
 
-            # Parse TTL từ message "proxy nay se die sau 1777s"
             ttl = 300
             match = re.search(r"(\d+)s", data.get("message", ""))
             if match:

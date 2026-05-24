@@ -1,4 +1,3 @@
-# HTTP errors are caught and logged but never raised — crawl continues even if ingest fails.
 import os
 import httpx
 from typing import Dict, List, Optional
@@ -86,7 +85,6 @@ async def ingest_detail(
     video_id: str,
     detail: dict,
 ) -> bool:
-    # detail has two shapes: error=True with reason, or full video fields.
     if detail.get("error"):
         payload = {
             "videoId": video_id,
@@ -194,7 +192,6 @@ async def ingest_channel_videos(
 ) -> bool:
     normalized = []
     for v in videos:
-        # channel.py returns "videoId" (camelCase); normalise to snake_case
         video_id = v.get("videoId") or v.get("video_id")
         if not video_id:
             continue

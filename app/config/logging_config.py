@@ -5,8 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-
-# ANSI color codes
 _RESET  = "\033[0m"
 _BOLD   = "\033[1m"
 _DIM    = "\033[2m"
@@ -26,14 +24,12 @@ _LEVEL_COLORS = {
     "CRITICAL": _MAGENTA + _BOLD,
 }
 
-
 class ColoredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         ts    = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
         level = record.levelname
         color = _LEVEL_COLORS.get(level, _WHITE)
 
-        # Shorten logger name: youtube_crawler.app.services.shorts → services.shorts
         parts = record.name.split(".")
         short_name = ".".join(parts[-2:]) if len(parts) >= 2 else record.name
 
@@ -46,7 +42,6 @@ class ColoredFormatter(logging.Formatter):
             msg_part = f"{color}{msg_part}{_RESET}"
 
         return f"{ts_part}  {level_part}  {name_part}  {msg_part}"
-
 
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -64,7 +59,6 @@ class JSONFormatter(logging.Formatter):
         if hasattr(record, "extra_data"):
             log_data["extra"] = record.extra_data
         return json.dumps(log_data, ensure_ascii=False)
-
 
 def setup_logging(
     log_level: str = "INFO",
@@ -108,9 +102,7 @@ def setup_logging(
 
     return logger
 
-
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"youtube_crawler.{name}")
-
 
 logger = setup_logging()

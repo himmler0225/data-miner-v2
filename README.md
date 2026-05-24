@@ -1,88 +1,188 @@
 # youtube-crawler
 
-FastAPI service that scrapes YouTube via the internal InnerTube API and pushes data to `youtube-api` for storage.
+FastAPI service that scrapes YouTube via the internal InnerTube API and pushes structured data to `youtube-api`.
 
 ---
 
 ## Architecture
 
 ```
-APScheduler (cron jobs)
-  ├── crawl_trending_videos   → POST /internal/ingest/trending
-  ├── crawl_shorts_videos     → POST /internal/ingest/shorts
-  ├── crawl_location_videos   → POST /internal/ingest/search  (26 cities)
-  └── crawl_popular_keywords  → POST /internal/ingest/search
+                    ┌────────────────────────────────────────────┐
+                    │              APScheduler (cron)             │
+                    │                                            │
+                    │  crawl_trending ──────────────────────┐   │
+                    │  crawl_shorts  ────────────────────┐  │   │
+                    │  crawl_location (26 cities) ────┐  │  │   │
+                    │  crawl_keywords ─────────────┐  │  │  │   │
+                    └──────────────────────────────│──│──│──│───┘
+                                                   │  │  │  │
+                                                   ▼  ▼  ▼  ▼
+                                          ingest_client.py
+                                          POST /internal/ingest/*
+                                                   │
+                                                   ▼
+                                             youtube-api
 
-youtube-api (real-time requests)
-  ├── GET /api/video/:id               → services/detail.py
-  ├── GET /api/video/:id/comments      → services/comment.py
-  ├── GET /api/videos/shorts           → services/shorts.py
-  └── GET /api/videos/live             → services/live.py
+     youtube-api (real-time, on cache miss)
+         │
+         ▼
+     GET /api/video/:id
+     GET /api/video/:id/comments
+     GET /api/videos/live
+     GET /api/videos/shorts
 ```
 
 ---
 
-## Project structure
+## Design Patterns
+
+### 1. Service-per-Feature Layer
+
+Each data type has its own service module with a single responsibility:
+
+```
+services/
+  trending.py        → top-level trending feed (HTML scrape + InnerTube fallback)
+  shorts.py          → Shorts Shelf
+  search.py          → keyword search with continuation token pagination
+  live.py            → live stream search
+  detail.py          → single video full metadata
+  comment.py         → comments + nested replies
+  channel.py         → channel video list
+  channel_info.py    → channel metadata
+  playlist.py        → playlist videos
+  location.py        → region-targeted search (gl/hl parameters)
+```
+
+Services share no state and have no cross-dependencies — each can be tested or swapped independently.
+
+### 2. Error Classification + Retry Strategy
+
+Two exception types enforce different recovery paths:
+
+| Exception | Cause | Retry behaviour |
+|-----------|-------|-----------------|
+| `YouTubeStructureChangedError` | Missing/moved key in response JSON | No retry — trips circuit breaker immediately, requires developer fix |
+| `CrawlNetworkError` | Timeout, connection error, HTTP 429 | Linear backoff, up to 3 attempts |
+
+This distinction prevents retry storms when YouTube changes its response shape — a structural error on attempt 1 would fail identically on attempts 2 and 3.
+
+### 3. Circuit Breaker
+
+Each scheduled job runs inside a circuit breaker:
+
+```
+CLOSED  (normal)
+  │  5 consecutive failures
+  ▼
+OPEN    (job skipped, logs warning)
+  │  app restart  /  manual reset via admin API
+  ▼
+CLOSED
+```
+
+A `YouTubeStructureChangedError` trips the circuit on the first failure. Transient network errors require 5 consecutive failures. This prevents a broken job from burning through rate limits or filling logs with identical stack traces.
+
+### 4. Safe Navigation
+
+All InnerTube response parsing uses safe access (`dict.get()`, `or {}`, optional chaining). YouTube changes its internal JSON structure regularly and without notice. Every key access is treated as potentially absent:
+
+```python
+title = (
+    renderer
+    .get("title", {})
+    .get("runs", [{}])[0]
+    .get("text", "")
+)
+```
+
+Structural failures surface as `YouTubeStructureChangedError` with the exact missing key path, not as a generic `KeyError`.
+
+### 5. Dedicated Ingest Client
+
+`ingest_client.py` is the sole component that calls `youtube-api`. It:
+- Owns all HTTP retry logic for the outbound connection
+- Never raises exceptions — crawl jobs continue even if the API is down
+- Normalises field names (camelCase → snake_case where needed) before sending
+- Keeps `0` as-is and never coerces numeric zeros to `None`
+
+This means a service failure in `youtube-api` never aborts an ongoing crawl job.
+
+### 6. Middleware Stack
+
+Applied in registration order (innermost first at request time):
+
+```
+RateLimitMiddleware    → per-key or per-IP throttle (slowapi)
+AuthMiddleware         → validate X-API-Key header
+LoggingMiddleware      → structured request/response log + X-Request-ID
+IPWhitelistMiddleware  → optional IP allowlist with service token bypass
+```
+
+Auth and rate-limit are placed before logging so rejected requests are still logged with their status.
+
+### 7. Proxy Rotation with Caching
+
+`ProxyManager` wraps a rotating residential proxy provider:
+- Caches the current proxy URL with its TTL so the rotation API is not called on every request
+- Parses TTL from the provider's human-readable message (`"proxy will expire in 1777s"`)
+- Falls back gracefully (direct connection) when no proxy key is configured
+
+### 8. Typed Data Contracts
+
+All inter-module data shapes are defined as `TypedDict` in `types.py`. Service functions return typed dicts; `ingest_client.py` accepts them directly. No untyped `dict` passed between layers.
+
+---
+
+## Project Structure
 
 ```
 app/
 ├── api/
-│   ├── routes.py              # Public FastAPI endpoints (X-API-Key required)
-│   └── admin.py               # Admin endpoints: manual job triggers, proxy debug
+│   ├── routes.py              Real-time endpoints (X-API-Key required)
+│   └── admin.py               Manual job triggers, circuit breaker reset, proxy debug
 ├── config/
-│   ├── urls.py                # Base URLs + proxy manager
-│   ├── headers.py             # Randomised User-Agent, viewport headers
-│   ├── constants.py           # InnerTube endpoint names, filter params, sort codes
-│   └── logging_config.py      # JSON logger — console, app.log, error.log
+│   ├── constants.py           InnerTube endpoint names, filter params, sort codes
+│   ├── headers.py             Randomised User-Agent pool (Chrome weight ~65%)
+│   ├── urls.py                Base URLs, proxy manager instance
+│   └── logging_config.py      Structured logger — console + file handlers
 ├── middleware/
-│   ├── auth.py                # verify_api_key FastAPI Depends
-│   ├── ip_whitelist.py        # IP whitelist + service token bypass
-│   ├── rate_limit.py          # slowapi limiter
-│   └── logging_middleware.py  # Request/response logging, X-Request-ID header
-├── services/
-│   ├── trending.py            # HTML scrape + search-by-view-count fallback
-│   ├── shorts.py              # Shorts feed
-│   ├── search.py              # Keyword search with continuation
-│   ├── live.py                # Live stream search
-│   ├── detail.py              # Single video detail
-│   ├── comment.py             # Comments + replies
-│   ├── channel.py             # Channel videos
-│   ├── channel_info.py        # Channel metadata
-│   ├── playlist.py            # Playlist videos
-│   └── location.py            # Region-targeted search via gl/hl
+│   ├── auth_middleware.py      X-API-Key validation
+│   ├── ip_whitelist.py         IP allowlist
+│   ├── rate_limit_config.py    slowapi limiter setup
+│   └── logging_middleware.py   Request/response logging, X-Request-ID injection
 ├── scheduler/
-│   ├── scheduler.py           # APScheduler singleton
-│   ├── config.py              # Job registration (cron triggers, env overrides)
-│   └── jobs.py                # Job implementations (retry, circuit breaker, batch)
-├── ingest_client.py           # HTTP client → POST /internal/ingest/*
-├── exceptions.py              # YouTubeStructureChangedError, CrawlNetworkError
-├── types.py                   # TypedDicts for all data shapes
-└── utils.py                   # httpx client factory, proxy helpers, parse_view_count
+│   ├── scheduler.py            APScheduler singleton (asyncio)
+│   ├── config.py               Job registration with cron triggers
+│   └── jobs.py                 Job implementations — retry, circuit breaker, batching
+├── services/                   One module per data type (see above)
+├── ingest_client.py            HTTP push layer → youtube-api
+├── exceptions.py               YouTubeStructureChangedError, CrawlNetworkError
+├── types.py                    TypedDicts for all data shapes
+└── utils.py                    httpx factory, proxy helpers, parse_view_count
 ```
-
-See `README.md` inside each subdirectory for flow details.
 
 ---
 
-## API Endpoints
+## API Reference
 
 All endpoints require `X-API-Key` header.
 
 | Method | Path | Params | Description |
 |--------|------|--------|-------------|
-| GET | `/api/videos/search` | `q`, `page`, `limit`, `sort` | Search videos |
-| GET | `/api/videos/trending` | `limit` | Trending videos |
-| GET | `/api/videos/live` | `q`, `page`, `limit` | Live streams by keyword |
+| GET | `/api/videos/search` | `q`, `page`, `limit`, `sort` | Keyword search |
+| GET | `/api/videos/trending` | `limit` | Trending feed |
+| GET | `/api/videos/live` | `q`, `page`, `limit` | Live streams |
 | GET | `/api/videos/shorts` | `limit` | Shorts feed |
-| GET | `/api/videos/location` | `gl`, `hl`, `query`, `max_results` | Region-targeted videos |
-| GET | `/api/video/{video_id}` | — | Video detail |
+| GET | `/api/videos/location` | `gl`, `hl`, `query`, `max_results` | Region-targeted search |
+| GET | `/api/video/{video_id}` | — | Full video detail |
 | GET | `/api/video/{video_id}/comments` | `page`, `limit` | Comments + replies |
 | GET | `/api/channel/{channel_id}` | — | Channel metadata |
 | GET | `/api/channel/{channel_id}/videos` | `page`, `limit` | Channel videos |
 | GET | `/api/channel/{channel_id}/playlists` | — | Channel playlists |
 | GET | `/api/playlist/{playlist_id}/videos` | — | Playlist videos |
 
-> Geographic targeting uses the `gl` country code in the InnerTube request context, not lat/lng (YouTube ignores lat/lng).
+> `gl` uses ISO 3166-1 alpha-2 country codes. YouTube ignores lat/lng — geographic targeting works only via `gl`/`hl` in the InnerTube request context.
 
 ---
 
@@ -92,60 +192,46 @@ All endpoints require `X-API-Key` header.
 |-----|-------------|--------|
 | `crawl_trending_videos` | `0 7 * * *` | Top 100 trending → `ingest/trending` |
 | `crawl_shorts_videos` | `0 9 * * *` | Shorts feed → `ingest/shorts` |
-| `crawl_location_videos` | `0 6 * * *` | 26 cities (gl/hl) → `ingest/search` |
+| `crawl_location_videos` | `0 6 * * *` | 26 city/language pairs → `ingest/search` |
 | `crawl_popular_keywords` | `0 8 * * *` | Fixed keyword list → `ingest/search` |
-| `cleanup_old_data` | `0 2 * * 0` | Weekly cleanup (placeholder) |
+| `cleanup_old_data` | `0 2 * * 0` | Weekly cleanup |
 | `health_check_job` | every 60 min | System ping |
 
-**Resilience:** 3-attempt linear backoff retry per job. Circuit breaker trips after 5 consecutive failures — job skips until app restart. `YouTubeStructureChangedError` bypasses retry and trips circuit immediately.
+Cron expressions can be overridden via environment variables (e.g. `TRENDING_CRON`).
 
 ---
 
-## Middleware stack
-
-Applied in order (Starlette registers in reverse):
-
-1. `RateLimitMiddleware` — per-key or per-IP rate limiting
-2. `AuthMiddleware` — validates `X-API-Key`
-3. `LoggingMiddleware` — logs every request with duration + `X-Request-ID`
-4. `IPWhitelistMiddleware` — blocks unlisted IPs (disabled by default)
-
----
-
-## Environment variables
+## Environment Variables
 
 ```env
 PORT=8000
 
-# API auth
 API_KEYS=key1,key2
 
-# IP whitelist
 IP_WHITELIST=
 IP_WHITELIST_ENABLED=false
 SERVICE_TOKENS=name:token
 
-# Proxy (optional, residential proxy improves trending HTML success rate)
 PROXY_URL=
-PROXY_KEYS=                     # comma-separated keys for rotating proxy provider
+PROXY_KEYS=
 
-# Scheduler
 ENABLE_SCHEDULER=true
 TRENDING_CRON=0 7 * * *
 SHORTS_CRON=0 9 * * *
 LOCATION_CRON=0 6 * * *
 KEYWORDS_CRON=0 8 * * *
 CLEANUP_CRON=0 2 * * 0
-HEALTH_CHECK_INTERVAL=60        # minutes
+HEALTH_CHECK_INTERVAL=60
 
-# Ingest target
 INGEST_API_URL=http://localhost:3000
-INGEST_SERVICE_KEY=             # must match INTERNAL_SERVICE_KEY in youtube-api
+INGEST_SERVICE_KEY=
 ```
+
+`INGEST_SERVICE_KEY` must match `INTERNAL_SERVICE_KEY` in `youtube-api`.
 
 ---
 
-## Running locally
+## Development
 
 ```bash
 pip install -r requirements.txt

@@ -22,9 +22,7 @@ from app.config.logging_config import get_logger
 router = APIRouter(prefix="/admin", dependencies=[Depends(verify_api_key)])
 logger = get_logger(__name__)
 
-# Tracks live asyncio Tasks so they can be cancelled
 _running_tasks: dict[str, asyncio.Task] = {}
-
 
 async def _run_job(job_id: str, coro_func):
     try:
@@ -41,16 +39,12 @@ async def _run_job(job_id: str, coro_func):
     finally:
         _running_tasks.pop(job_id, None)
 
-
 def _start_job(job_id: str, coro_func) -> dict:
     if job_id in _running_tasks and not _running_tasks[job_id].done():
         return {"status": "already_running", "job": job_id}
     task = asyncio.create_task(_run_job(job_id, coro_func))
     _running_tasks[job_id] = task
     return {"status": "started", "job": job_id}
-
-
-# ── Debug / proxy ─────────────────────────────────────────────────────────────
 
 @router.get("/proxy/debug")
 async def proxy_debug():
@@ -69,7 +63,6 @@ async def proxy_debug():
             return {"key": key[:8] + "...", "status_code": resp.status_code, "body": resp.text}
     except Exception as e:
         return {"error": repr(e)}
-
 
 @router.get("/debug/location")
 async def debug_location(lat: float = 10.8231, lng: float = 106.6297):
@@ -98,11 +91,9 @@ async def debug_location(lat: float = 10.8231, lng: float = 106.6297):
     except Exception as e:
         return {"error": repr(e)}
 
-
 @router.get("/proxy/status")
 async def proxy_status():
     return {"proxies": proxy_manager.status()}
-
 
 @router.get("/proxy/test")
 async def test_proxy():
@@ -116,9 +107,6 @@ async def test_proxy():
         return {"status": "ok", "exit_ip": ip, "proxy": proxy_url}
     except Exception as e:
         return {"status": "error", "proxy": proxy_url, "error": repr(e)}
-
-
-# ── Jobs ──────────────────────────────────────────────────────────────────────
 
 @router.get("/jobs")
 async def list_jobs():
@@ -140,37 +128,30 @@ async def list_jobs():
         })
     return {"jobs": jobs}
 
-
 @router.post("/jobs/trending")
 async def trigger_trending():
     return _start_job("crawl_trending", crawl_trending_videos)
-
 
 @router.post("/jobs/shorts")
 async def trigger_shorts():
     return _start_job("crawl_shorts", crawl_shorts_videos)
 
-
 @router.post("/jobs/location")
 async def trigger_location():
     return _start_job("crawl_location", crawl_location_videos)
-
 
 @router.post("/jobs/keywords")
 async def trigger_keywords():
     return _start_job("crawl_keywords", crawl_popular_keywords)
 
-
 @router.post("/jobs/cleanup")
 async def trigger_cleanup():
     return _start_job("cleanup_data", cleanup_old_data)
-
 
 @router.post("/jobs/health")
 async def trigger_health():
     result = await health_check_job()
     return {"status": "done", "result": result}
-
 
 @router.post("/jobs/{job_id}/reset")
 async def reset_job(job_id: str):

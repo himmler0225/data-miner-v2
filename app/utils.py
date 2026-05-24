@@ -16,7 +16,6 @@ _api_key_cache: dict = {"value": "", "expires": 0.0}
 _visitor_data_cache: dict = {"value": "", "expires": 0.0}
 _client_version_cache: dict = {"value": "", "expires": 0.0}
 
-
 async def get_youtube_api_key(proxy: str = None) -> str:
     now = time.monotonic()
     if _api_key_cache["value"] and now < _api_key_cache["expires"]:
@@ -45,13 +44,11 @@ async def get_youtube_api_key(proxy: str = None) -> str:
         _api_key_cache["expires"] = now + _KEY_TTL
         return key
 
-
 def get_visitor_data() -> Optional[str]:
     """Return cached visitorData if fresh, else None."""
     if _visitor_data_cache["value"] and time.monotonic() < _visitor_data_cache["expires"]:
         return _visitor_data_cache["value"]
     return None
-
 
 def get_client_version() -> str:
     """Return dynamic client version from homepage, fallback to constant."""
@@ -59,15 +56,12 @@ def get_client_version() -> str:
         return _client_version_cache["value"]
     return CLIENT_VERSION
 
-
-# ── Timezones for context realism ────────────────────────────────────────────
 _TIMEZONES = [
     "America/New_York", "America/Chicago", "America/Los_Angeles",
     "Europe/London", "Europe/Paris",
     "Asia/Tokyo", "Asia/Ho_Chi_Minh", "Asia/Bangkok", "Asia/Singapore",
     "Australia/Sydney",
 ]
-
 
 def get_context(original_url: Optional[str] = None, user_agent: Optional[str] = None) -> dict:
     """Full InnerTube WEB context. browse endpoints require user + request sections."""
@@ -103,15 +97,9 @@ def get_context(original_url: Optional[str] = None, user_agent: Optional[str] = 
         },
     }
 
-
-# ── Jittered sleep ───────────────────────────────────────────────────────────
-
 async def jitter_sleep(base: float, spread: float = 0.4) -> None:
     """Sleep base ± spread*base seconds. Prevents fixed-interval fingerprinting."""
     await asyncio.sleep(random.uniform(base * (1 - spread), base * (1 + spread)))
-
-
-# ── HTTP utils ───────────────────────────────────────────────────────────────
 
 async def resolve_channel_id_from_handle(handle: str) -> str:
     async with create_httpx_client() as client:
@@ -126,21 +114,17 @@ async def resolve_channel_id_from_handle(handle: str) -> str:
             return match.group(1)
         raise Exception("Channel_id not found")
 
-
 def save_to_json(data, filename="debug.json"):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-
 def get_default_proxy():
     return get_proxy()
-
 
 def get_httpx_proxies(proxy: str = None):
     if proxy is None:
         proxy = get_proxy()
     return proxy or None
-
 
 def create_httpx_client(proxy: str = None, headers: dict = None, timeout: int = DEFAULT_TIMEOUT):
     proxies = get_httpx_proxies(proxy)
@@ -165,12 +149,10 @@ def parse_view_count(text) -> int:
     )
 
     try:
-        # Vietnamese format: 191 Tr
         if "TR" in str(text).upper():
             number = first.replace(".", "").replace(",", ".")
             return int(float(number) * 1_000_000)
 
-        # English format
         if first.endswith("K"):
             return int(float(first[:-1]) * 1_000)
 
@@ -180,7 +162,6 @@ def parse_view_count(text) -> int:
         if first.endswith("B"):
             return int(float(first[:-1]) * 1_000_000_000)
 
-        # Normal number with dots
         return int(first.replace(".", ""))
 
     except (ValueError, AttributeError):

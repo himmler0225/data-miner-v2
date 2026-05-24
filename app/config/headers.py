@@ -1,7 +1,6 @@
 import random
 from .constants import CLIENT_VERSION
 
-# Chrome releases ~every 4 weeks. Keep these updated periodically.
 _CHROME_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.205 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.116 Safari/537.36",
@@ -32,7 +31,6 @@ _SAFARI_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
 ]
 
-# Weighted pool: Chrome ~65% real-world share
 USER_AGENTS = (
     _CHROME_AGENTS * 5
     + _EDGE_AGENTS * 2
@@ -65,7 +63,6 @@ REFERERS = [
     "https://www.google.com/",
 ]
 
-
 def _parse_ua_type(ua: str) -> str:
     if "Edg/" in ua:
         return "edge"
@@ -75,13 +72,11 @@ def _parse_ua_type(ua: str) -> str:
         return "safari"
     return "chrome"
 
-
 def _chrome_version(ua: str) -> str:
     try:
         return ua.split("Chrome/")[1].split(".")[0]
     except IndexError:
         return "131"
-
 
 def get_youtube_headers(visitor_data: str = None, client_version: str = None) -> dict:
     ua = random.choice(USER_AGENTS)
