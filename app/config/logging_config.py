@@ -69,7 +69,7 @@ def setup_logging(
     log_path = Path(log_dir)
     log_path.mkdir(exist_ok=True)
 
-    logger = logging.getLogger("youtube_crawler")
+    logger = logging.getLogger("data_miner")
     logger.setLevel(getattr(logging, log_level.upper()))
     logger.handlers.clear()
 
@@ -103,6 +103,6 @@ def setup_logging(
     return logger
 
 def get_logger(name: str) -> logging.Logger:
-    return logging.getLogger(f"youtube_crawler.{name}")
+    return logging.getLogger(f"data_miner.{name}")
 
 logger = setup_logging()

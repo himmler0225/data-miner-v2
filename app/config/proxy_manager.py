@@ -58,7 +58,7 @@ class ProxyManager:
                 data = resp.json()
 
             if data.get("status") != 100:
-                logger.warning(f"Proxy API [{key[:8]}]: status={data.get('status')} — {data.get('message')}")
+                logger.warning(f"Proxy API [{key[:8]}]: trạng thái={data.get('status')} — {data.get('message')}")
                 return None
 
             raw = data.get("proxyhttp", "")

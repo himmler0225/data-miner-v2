@@ -89,7 +89,7 @@ def get_youtube_headers(visitor_data: str = None, client_version: str = None) ->
         "User-Agent": ua,
         "Accept": "*/*",
         "Accept-Language": accept_language,
-        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Encoding": "gzip, deflate",
         "Origin": "https://www.youtube.com",
         "Referer": random.choice(REFERERS),
         "Connection": "keep-alive",

@@ -1,0 +1,30 @@
+import asyncio
+from app.config.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+_running_tasks: dict[str, asyncio.Task] = {}
+
+
+async def _run_job(job_id: str, coro_func):
+    try:
+        logger.info(f"Job '{job_id}' started")
+        result = await coro_func()
+        logger.info(f"Job '{job_id}' completed: {result}")
+        return result
+    except asyncio.CancelledError:
+        logger.warning(f"Job '{job_id}' cancelled")
+        raise
+    except Exception as e:
+        logger.error(f"Job '{job_id}' failed: {e}", exc_info=True)
+        raise
+    finally:
+        _running_tasks.pop(job_id, None)
+
+
+def _start_job(job_id: str, coro_func) -> dict:
+    if job_id in _running_tasks and not _running_tasks[job_id].done():
+        return {"status": "already_running", "job": job_id}
+    task = asyncio.create_task(_run_job(job_id, coro_func))
+    _running_tasks[job_id] = task
+    return {"status": "started", "job": job_id}

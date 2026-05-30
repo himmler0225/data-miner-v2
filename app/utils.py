@@ -1,7 +1,9 @@
+from functools import wraps
 import re
 import time
 import random
 import asyncio
+from fastapi import HTTPException
 import httpx
 import json
 from typing import Optional
@@ -9,9 +11,12 @@ from .config.urls import YOUTUBE_BASE_URL, get_proxy
 from .config.constants import (
     CLIENT_NAME, CLIENT_VERSION, CLIENT_HL, CLIENT_GL, DEFAULT_TIMEOUT
 )
+from app.config.logging_config import get_logger
+from app.exceptions import YouTubeStructureChangedError
 
 _KEY_TTL = 3600  # 1 hour
 
+logger = get_logger(__name__)
 _api_key_cache: dict = {"value": "", "expires": 0.0}
 _visitor_data_cache: dict = {"value": "", "expires": 0.0}
 _client_version_cache: dict = {"value": "", "expires": 0.0}
@@ -127,12 +132,12 @@ def get_httpx_proxies(proxy: str = None):
     return proxy or None
 
 def create_httpx_client(proxy: str = None, headers: dict = None, timeout: int = DEFAULT_TIMEOUT):
-    proxies = get_httpx_proxies(proxy)
+    proxy_url = get_httpx_proxies(proxy)
     kwargs = {"timeout": timeout}
     if headers:
         kwargs["headers"] = headers
-    if proxies:
-        kwargs["proxies"] = proxies
+    if proxy_url:
+        kwargs["proxy"] = proxy_url
     return httpx.AsyncClient(**kwargs)
 
 def parse_view_count(text) -> int:
@@ -166,3 +171,35 @@ def parse_view_count(text) -> int:
 
     except (ValueError, AttributeError):
         return 0
+
+def retry_on_failure(max_retries=3, delay=1):
+    """Retry decorator with linear backoff. Raises immediately on YouTubeStructureChangedError."""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except YouTubeStructureChangedError as e:
+                    logger.critical(
+                        f"Cấu trúc YouTube thay đổi trong {func.__name__}: {e}",
+                        extra={"extra_data": {"context": e.context}}
+                    )
+                    raise HTTPException(status_code=502, detail=f"YouTube structure changed: {e}")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        wait_time = delay * (attempt + 1)
+                        logger.warning(
+                            f"Attempt {attempt + 1}/{max_retries} for {func.__name__} failed, "
+                            f"retrying in {wait_time}s: {str(e)}"
+                        )
+                        await asyncio.sleep(wait_time)
+                        continue
+                    logger.error(f"All {max_retries} retries exhausted for {func.__name__}", exc_info=True)
+                    raise last_exception
+        return wrapper
+    return decorator
