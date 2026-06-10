@@ -1,3 +1,4 @@
+import asyncio
 import re
 import json
 import random
@@ -303,6 +304,14 @@ async def _search_trending(proxy, max_results, gl, hl) -> List[Dict]:
     return collected
 
 
+async def _safe(coro, label: str):
+    """Run a coroutine, returning (result, None) or (None, exc) — never raises."""
+    try:
+        return await coro, None
+    except Exception as exc:
+        return None, (label, exc)
+
+
 async def get_trending_videos(
     proxy: Optional[str] = None,
     max_results: int = 100,
@@ -312,45 +321,45 @@ async def get_trending_videos(
     skip_live: bool = True,
     skip_trending: bool = False,
 ) -> List[Dict]:
-    logger.info(f"Starting trending crawl gl={gl}")
+    logger.info("Starting trending crawl gl=%s", gl)
     if skip_trending:
-        logger.info("Trending crawl skipped by config")
         return []
 
-    collected: List[Dict] = []
-
+    # Run API and HTML methods in parallel — take first non-empty result.
+    # This cuts wall-clock time roughly in half when one method is slow to fail.
     if proxy:
-        try:
-            collected = await _api_trending(proxy, max_results, filter_params, gl, hl)
-            if collected:
-                logger.info(f"[trending] API method: {len(collected)} videos")
-        except YouTubeStructureChangedError as e:
-            logger.warning(f"[trending] API structure changed: {e}")
-        except Exception as e:
-            logger.warning(f"[trending] API failed: {e!r}")
-    else:
-        logger.info("[trending] no proxy — skipping Innertube browse, using fallback")
+        (api_result, api_err), (html_result, html_err) = await asyncio.gather(
+            _safe(_api_trending(proxy, max_results, filter_params, gl, hl),  "api"),
+            _safe(_html_trending(proxy, max_results, filter_params, gl, hl), "html"),
+        )
+        if api_err:
+            logger.warning("[trending] API failed: %s — %r", *api_err)
+        if html_err:
+            logger.warning("[trending] HTML failed: %s — %r", *html_err)
 
-    if not collected:
-        try:
-            collected = await _html_trending(proxy, max_results, filter_params, gl, hl)
-            if collected:
-                logger.info(f"[trending] HTML method: {len(collected)} videos")
-        except YouTubeStructureChangedError as e:
-            logger.warning(f"[trending] HTML structure changed: {e}")
-        except Exception as e:
-            logger.warning(f"[trending] HTML failed: {e!r}")
+        collected = api_result or html_result or []
+        if api_result:
+            logger.info("[trending] API method: %d videos", len(api_result))
+        elif html_result:
+            logger.info("[trending] HTML method: %d videos", len(html_result))
+    else:
+        logger.info("[trending] no proxy — using HTML fallback")
+        collected, err = await _safe(_html_trending(proxy, max_results, filter_params, gl, hl), "html")
+        if err:
+            logger.warning("[trending] HTML failed: %s — %r", *err)
+        collected = collected or []
 
     if not collected:
         logger.warning("[trending] all methods failed — falling back to view-count search")
         collected = await _search_trending(proxy, max_results, gl, hl)
-        logger.info(f"[trending] search fallback: {len(collected)} videos")
+        logger.info("[trending] search fallback: %d videos", len(collected))
 
     if skip_live:
         before = len(collected)
         collected = [v for v in collected if not _is_live_video(v)]
-        if before != len(collected):
-            logger.info(f"[trending] filtered {before - len(collected)} live videos")
+        filtered = before - len(collected)
+        if filtered:
+            logger.info("[trending] filtered %d live videos", filtered)
 
-    logger.info(f"[trending] done: {len(collected)} videos")
+    logger.info("[trending] done: %d videos", len(collected))
     return collected[:max_results]

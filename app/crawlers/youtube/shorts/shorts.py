@@ -148,15 +148,15 @@ async def _fetch_shorts_from_search(client, api_key, query, seen_ids, max_per_qu
     try:
         resp = await client.post(url, json={"context": get_context(), "query": query})
         if not resp.is_success:
-            logger.error(f"[shorts:search] '{query}' → HTTP {resp.status_code}")
+            logger.error("[shorts:search] '%s' → HTTP %s", query, resp.status_code)
             return []
         data = resp.json()
     except Exception as e:
-        logger.error(f"[shorts:search] '{query}' → {e}")
+        logger.error("[shorts:search] '%s' → %s", query, e)
         return []
 
     items = _find_reel_item_renderers(data)
-    logger.info(f"[shorts:search] '{query}' → {len(items)} items")
+    logger.info("[shorts:search] '%s' → %s items", query, len(items))
     shorts: List[Dict] = []
     for item_type, item in items:
         parsed = _parse_reel_item_renderer(item_type, item)
@@ -180,7 +180,7 @@ async def _bootstrap_session(client) -> None:
                 if "m.youtube.com" in loc:
                     logger.warning("[shorts] redirected to m.youtube.com — WEB context may cycle")
         except Exception as e:
-            logger.warning(f"[shorts] init {url} failed: {e}")
+            logger.warning("[shorts] init %s failed: %s", url, e)
 
 
 async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict]:
@@ -213,11 +213,11 @@ async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict
         try:
             resp = await client.post(url, json=payload)
         except Exception as e:
-            logger.error(f"[shorts:reel] step {i} connection error: {e}")
+            logger.error("[shorts:reel] step %s connection error: %s", i, e)
             break
 
         if not resp.is_success:
-            logger.error(f"[shorts:reel] step {i} HTTP {resp.status_code}")
+            logger.error("[shorts:reel] step %s HTTP %s", i, resp.status_code)
             if i == 0:
                 resp.raise_for_status()
             break
@@ -225,7 +225,7 @@ async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict
         try:
             data = resp.json()
         except Exception as e:
-            logger.error(f"[shorts:reel] step {i} invalid JSON: {e}")
+            logger.error("[shorts:reel] step %s invalid JSON: %s", i, e)
             break
 
         status = data.get("status", "")
@@ -233,7 +233,7 @@ async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict
         tracking_params = data.get("trackingParams")
 
         if status != "REEL_ITEM_WATCH_STATUS_SUCCEEDED":
-            logger.warning(f"[shorts:reel] step {i} status={status} → ending batch")
+            logger.warning("[shorts:reel] step %s status=%s → ending batch", i, status)
             break
 
         parsed = _parse_short(data) or _parse_short_from_replacement(data)
@@ -242,18 +242,18 @@ async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict
             if vid in seen_ids:
                 dup_count += 1
                 if dup_count >= 5:
-                    logger.debug(f"[shorts:reel] step {i} duplicate limit reached → ending batch")
+                    logger.debug("[shorts:reel] step %s duplicate limit reached → ending batch", i)
                     break
             else:
                 dup_count = 0
                 seen_ids.add(vid)
                 batch.append(parsed)
-                logger.info(f"[shorts:reel] +1 → {vid} ({parsed.get('title', '')[:50]})")
+                logger.info("[shorts:reel] +1 → %s (%s)", vid, parsed.get('title', ''))
 
         if new_pos and new_pos == last_pos_params:
             stale_count += 1
             if stale_count >= 3:
-                logger.debug(f"[shorts:reel] step {i} pos_params unchanged → ending batch")
+                logger.debug("[shorts:reel] step %s pos_params unchanged → ending batch", i)
                 break
         else:
             stale_count = 0
@@ -280,7 +280,7 @@ async def get_shorts_feed(proxy: str = None, max_results: int = 20) -> List[Dict
                 break
             results = await _fetch_shorts_from_search(client, api_key, q, seen_ids, max_per_query=max_results)
             shorts.extend(results)
-            logger.info(f"[shorts] search '{q}' +{len(results)} → total {len(shorts)}")
+            logger.info("[shorts] search '%s' +%s → total %s", q, len(results), len(shorts))
 
         if len(shorts) < max_results:
             logger.info("[shorts] search insufficient, switching to reel_item_watch")
@@ -300,7 +300,7 @@ async def get_shorts_feed(proxy: str = None, max_results: int = 20) -> List[Dict
                     continue
                 consecutive_empty = 0
                 shorts.extend(batch)
-                logger.info(f"[shorts] reel restart={restart} +{len(batch)} → total {len(shorts)}")
+                logger.info("[shorts] reel restart=%s +%s → total %s", restart, len(batch), len(shorts))
 
-    logger.info(f"[shorts] done → collected {len(shorts)} shorts")
+    logger.info("[shorts] done → collected %s shorts", len(shorts))
     return shorts[:max_results]

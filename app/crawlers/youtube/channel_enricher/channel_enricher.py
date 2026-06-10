@@ -18,7 +18,7 @@ async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
             if data.get("channel_id"):
                 await ingest_client.ingest_channel(data)
         except Exception as e:
-            logger.warning(f"[enricher] info {channel_id}: {e!r}")
+            logger.warning("[enricher] info %s: %s", channel_id, e)
 
     async def _videos() -> None:
         try:
@@ -26,7 +26,7 @@ async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
             if videos:
                 await ingest_client.ingest_channel_videos(channel_id=channel_id, videos=videos)
         except Exception as e:
-            logger.warning(f"[enricher] videos {channel_id}: {e!r}")
+            logger.warning("[enricher] videos %s: %s", channel_id, e)
 
     async def _playlists() -> None:
         try:
@@ -47,16 +47,16 @@ async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
                         await ingest_client.ingest_playlists(channel_id=channel_id, playlists=[playlist_meta])
                         await ingest_client.ingest_playlist_items(playlist_id=playlist_id, videos=items)
                     except Exception as e:
-                        logger.warning(f"[enricher] playlist_items {playlist_id}: {e!r}")
+                        logger.warning("[enricher] playlist_items %s: %s", playlist_id, e)
 
             tasks = [_fetch_and_ingest(p["playlistId"]) for p in playlists if p.get("playlistId")]
             await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
-            logger.warning(f"[enricher] playlists {channel_id}: {e!r}")
+            logger.warning("[enricher] playlists %s: %s", channel_id, e)
 
-    logger.info(f"[enricher] start {channel_id}")
+    logger.info("[enricher] start %s", channel_id)
     await asyncio.gather(_info(), _videos(), _playlists())
-    logger.info(f"[enricher] done  {channel_id}")
+    logger.info("[enricher] done  %s", channel_id)
 
 
 async def enrich_channels_batch(
@@ -73,4 +73,4 @@ async def enrich_channels_batch(
             await _enrich_one(cid, proxy=proxy)
 
     await asyncio.gather(*[_guarded(cid) for cid in channel_ids], return_exceptions=True)
-    logger.info(f"[enricher] batch complete — {len(channel_ids)} channels")
+    logger.info("[enricher] batch complete — %s channels", len(channel_ids))

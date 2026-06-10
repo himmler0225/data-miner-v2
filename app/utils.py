@@ -7,7 +7,7 @@ from fastapi import HTTPException
 import httpx
 import json
 from typing import Optional
-from .config.urls import YOUTUBE_BASE_URL, get_proxy
+from .config.urls import YOUTUBE_BASE_URL, get_proxy, proxy_manager
 from .config.constants import (
     CLIENT_NAME, CLIENT_VERSION, CLIENT_HL, CLIENT_GL, DEFAULT_TIMEOUT
 )
@@ -18,6 +18,24 @@ _KEY_TTL = 3600  # 1 hour
 
 logger = Logger.get(__name__)
 _api_key_cache: dict = {"value": "", "expires": 0.0}
+
+# ── Shared connection pool ────────────────────────────────────────────────────
+# Keyed by proxy URL (or "" for direct). Reusing clients avoids TCP handshake
+# overhead on every crawler call (~50–200ms saved per request).
+_client_pool: dict[str, httpx.AsyncClient] = {}
+
+
+def _get_pooled_client(proxy: Optional[str], headers: Optional[dict], timeout: int) -> httpx.AsyncClient:
+    key = proxy or ""
+    if key not in _client_pool or _client_pool[key].is_closed:
+        limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
+        kwargs: dict = {"timeout": timeout, "limits": limits}
+        if proxy:
+            kwargs["proxy"] = proxy
+        if headers:
+            kwargs["headers"] = headers
+        _client_pool[key] = httpx.AsyncClient(**kwargs)
+    return _client_pool[key]
 _visitor_data_cache: dict = {"value": "", "expires": 0.0}
 _client_version_cache: dict = {"value": "", "expires": 0.0}
 
@@ -131,11 +149,34 @@ def get_httpx_proxies(proxy: str = None):
         proxy = get_proxy()
     return proxy or None
 
+class _PooledClientContext:
+    """Async context manager that yields a shared client without closing it on exit."""
+    __slots__ = ("_client",)
+
+    def __init__(self, client: httpx.AsyncClient) -> None:
+        self._client = client
+
+    async def __aenter__(self) -> httpx.AsyncClient:
+        return self._client
+
+    async def __aexit__(self, *_) -> None:
+        pass  # do not close — client is pooled and reused
+
+
 def create_httpx_client(proxy: str = None, headers: dict = None, timeout: int = DEFAULT_TIMEOUT):
+    """
+    Return a pooled AsyncClient as a context manager.
+    Callers use `async with create_httpx_client(...) as client:` unchanged,
+    but the underlying client is reused across calls — no TCP handshake per request.
+    Clients with custom headers are always created fresh (not pooled) since headers
+    may differ per call-site.
+    """
     proxy_url = get_httpx_proxies(proxy)
-    kwargs = {"timeout": timeout}
-    if headers:
-        kwargs["headers"] = headers
+    if not headers:
+        return _PooledClientContext(_get_pooled_client(proxy_url, None, timeout))
+    # Custom headers → fresh client (not worth pooling for rare cases)
+    kwargs: dict = {"timeout": timeout}
+    kwargs["headers"] = headers
     if proxy_url:
         kwargs["proxy"] = proxy_url
     return httpx.AsyncClient(**kwargs)
@@ -191,15 +232,18 @@ def retry_on_failure(max_retries=3, delay=1):
                     raise
                 except Exception as e:
                     last_exception = e
+                    # Rotate proxy on network/proxy errors so the next attempt uses a fresh IP
+                    if isinstance(e, (httpx.ProxyError, httpx.ConnectError, httpx.RemoteProtocolError)):
+                        proxy_manager.rotate()
                     if attempt < max_retries - 1:
                         wait_time = delay * (attempt + 1)
                         logger.warning(
-                            f"Attempt {attempt + 1}/{max_retries} for {func.__name__} failed, "
-                            f"retrying in {wait_time}s: {str(e)}"
+                            "Attempt %d/%d for %s failed, retrying in %ds: %s",
+                            attempt + 1, max_retries, func.__name__, wait_time, e,
                         )
                         await asyncio.sleep(wait_time)
                         continue
-                    logger.error(f"All {max_retries} retries exhausted for {func.__name__}", exc_info=True)
+                    logger.error("All %d retries exhausted for %s", max_retries, func.__name__, exc_info=True)
                     raise last_exception
         return wrapper
     return decorator

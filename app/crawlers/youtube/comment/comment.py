@@ -1,3 +1,4 @@
+import asyncio
 import base64
 from typing import List, Dict, Literal
 
@@ -55,7 +56,7 @@ async def fetch_replies(client, continuation_token: str, context: dict, proxy: s
                     comment_id = comment_vm.get("commentId")
                     entity = entity_map.get(comment_id, {})
                     if not entity:
-                        logger.debug(f"Missing entity for reply commentId={comment_id}")
+                        logger.debug("Missing entity for reply commentId=%s", comment_id)
                         continue
                     replies.append({
                         "comment_id": comment_id,
@@ -89,7 +90,7 @@ def extract_comment_continuation_token(data: dict) -> str:
                     if token:
                         return token
     except Exception as e:
-        logger.debug(f"Path 1 (onResponseReceivedEndpoints) failed: {e}")
+        logger.debug("Path 1 (onResponseReceivedEndpoints) failed: %s", e)
 
     # Path 2: twoColumnWatchNextResults
     try:
@@ -107,7 +108,7 @@ def extract_comment_continuation_token(data: dict) -> str:
                 if token:
                     return token
     except Exception as e:
-        logger.debug(f"Path 2 (twoColumnWatchNextResults) failed: {e}")
+        logger.debug("Path 2 (twoColumnWatchNextResults) failed: %s", e)
 
     # Path 3: engagementPanels
     try:
@@ -121,7 +122,7 @@ def extract_comment_continuation_token(data: dict) -> str:
                 if token:
                     return token
     except Exception as e:
-        logger.debug(f"Path 3 (engagementPanels) failed: {e}")
+        logger.debug("Path 3 (engagementPanels) failed: %s", e)
 
     # Path 4: frameworkUpdates mutations
     try:
@@ -133,7 +134,7 @@ def extract_comment_continuation_token(data: dict) -> str:
             if token:
                 return token
     except Exception as e:
-        logger.debug(f"Path 4 (frameworkUpdates) failed: {e}")
+        logger.debug("Path 4 (frameworkUpdates) failed: %s", e)
 
     return None
 
@@ -173,10 +174,11 @@ async def get_video_comments(
 
     async with create_httpx_client(proxy=proxy) as client:
         if sort == "newest":
-            # Skip the page-load step — use a pre-built sort token directly
+            # Pre-built protobuf token works reliably for newest sort.
             continuation_token = _build_comment_sort_token(video_id, "newest")
-            logger.info("Using pre-built newest-sort token for %s", video_id)
+            logger.debug("Using pre-built newest-sort token for %s", video_id)
         else:
+            # sort="top" requires a session token from YouTube — must fetch it first.
             resp = await client.post(url_next, json={"context": context, "videoId": video_id})
             resp.raise_for_status()
             data = resp.json()
@@ -231,22 +233,32 @@ async def get_video_comments(
                                 reply_token = continuation
                                 break
 
-                        if reply_token:
-                            logger.debug(f"Fetching replies for comment {comment_id}")
-                            comment_data["replies"] = await fetch_replies(client, reply_token, context, proxy=proxy)
-
                         comments.append(comment_data)
+                        if reply_token:
+                            comment_data["_reply_token"] = reply_token
                         if len(comments) >= max_comments:
                             break
 
                     elif "continuationItemRenderer" in item:
                         continuation_token = (
-                            item.get("continuationItemRenderer", )
+                            item.get("continuationItemRenderer", {})
                             .get("continuationEndpoint", {})
                             .get("continuationCommand", {}).get("token")
                         )
 
                 if len(comments) >= max_comments:
                     break
+
+        # Batch-fetch all replies in parallel instead of sequential awaits
+        pending = [(i, c.pop("_reply_token")) for i, c in enumerate(comments) if "_reply_token" in c]
+        if pending:
+            logger.debug("Fetching replies for %d comments in parallel", len(pending))
+            results = await asyncio.gather(
+                *[fetch_replies(client, tok, context, proxy=proxy) for _, tok in pending],
+                return_exceptions=True,
+            )
+            for (idx, _), result in zip(pending, results):
+                if isinstance(result, list):
+                    comments[idx]["replies"] = result
 
     return comments[:max_comments]

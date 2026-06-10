@@ -54,7 +54,13 @@ async def proxy_debug():
 
 @router.get("/proxy/status")
 async def proxy_status():
-    return ApiResponse.ok({"proxies": proxy_manager.status()})
+    return ApiResponse.ok(proxy_manager.status())
+
+
+@router.post("/proxy/rotate")
+async def proxy_rotate():
+    proxy_manager.rotate()
+    return ApiResponse.ok({"rotated": True})
 
 
 @router.get("/proxy/test")
@@ -112,6 +118,6 @@ async def reset_job(job_id: str):
         task.cancel()
         cancelled = True
     if cancelled:
-        logger.info(f"Job '{job_id}' cancelled via reset endpoint")
+        logger.info("Job '%s' cancelled via reset endpoint", job_id)
     reset_circuit(job_id)
     return ApiResponse.ok({"status": "reset", "job": job_id, "cancelled": cancelled})

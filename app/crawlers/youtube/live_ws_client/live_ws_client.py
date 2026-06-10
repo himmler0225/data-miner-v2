@@ -19,7 +19,7 @@ sio = socketio.AsyncClient(
 
 @sio.event(namespace="/crawler")
 async def connect():
-    logger.info(f"[live_ws] Connected to NestJS at {_NESTJS_WS_URL}/crawler")
+    logger.info("[live_ws] Connected to NestJS at %s/crawler", _NESTJS_WS_URL)
 
 
 @sio.event(namespace="/crawler")
@@ -29,7 +29,7 @@ async def disconnect():
 
 @sio.event(namespace="/crawler")
 async def connect_error(data):
-    logger.error(f"[live_ws] Connection error: {data}")
+    logger.error("[live_ws] Connection error: %s", data)
 
 
 async def connect_to_nestjs():
@@ -42,7 +42,7 @@ async def connect_to_nestjs():
             wait_timeout=10,
         )
     except Exception as e:
-        logger.error(f"[live_ws] Failed to connect: {e}")
+        logger.error("[live_ws] Failed to connect: %s", e)
 
 
 async def push_live_videos(videos: list) -> None:
@@ -50,7 +50,7 @@ async def push_live_videos(videos: list) -> None:
         logger.warning("[live_ws] Not connected, skipping live push")
         return
     await sio.emit("crawler:live:push", {"videos": videos}, namespace="/crawler")
-    logger.info(f"[live_ws] Pushed {len(videos)} live videos to NestJS")
+    logger.info("[live_ws] Pushed %s live videos to NestJS", len(videos))
 
 
 async def disconnect_from_nestjs() -> None:

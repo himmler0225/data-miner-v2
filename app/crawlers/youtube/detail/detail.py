@@ -42,11 +42,11 @@ async def _get_via_watch_page(video_id: str, proxy: str = None) -> Optional[dict
     async with create_httpx_client(proxy=proxy, headers=headers, timeout=15) as client:
         resp = await client.get(YOUTUBE_WATCH_URL, params=params)
     if resp.status_code != 200:
-        logger.warning(f"[detail/watch_page] HTTP {resp.status_code} for {video_id}")
+        logger.warning("[detail/watch_page] HTTP %s for %s", resp.status_code, video_id)
         return None
     data = _extract_player_response(resp.text)
     if not data:
-        logger.warning(f"[detail/watch_page] ytInitialPlayerResponse not found for {video_id}")
+        logger.warning("[detail/watch_page] ytInitialPlayerResponse not found for %s", video_id)
         return None
     return data
 
@@ -55,7 +55,7 @@ async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
     try:
         api_key = await get_youtube_api_key(proxy=proxy)
     except Exception as e:
-        logger.warning(f"[detail/api] Failed to get API key: {e!r}")
+        logger.warning("[detail/api] Failed to get API key: %s", e)
         return None
     url = get_youtube_api_url(ENDPOINT_PLAYER, api_key)
     headers = get_youtube_headers()
@@ -68,7 +68,7 @@ async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
     async with create_httpx_client(proxy=proxy, headers=headers, timeout=10) as client:
         resp = await client.post(url, json=payload)
     if resp.status_code != 200:
-        logger.warning(f"[detail/api] HTTP {resp.status_code} for {video_id}")
+        logger.warning("[detail/api] HTTP %s for %s", resp.status_code, video_id)
         return None
     return resp.json()
 
@@ -113,19 +113,19 @@ def _parse_player_response(data: dict, video_id: str) -> dict:
 async def get_video_detail(video_id: str, proxy: str = None) -> dict:
     data = await _get_via_watch_page(video_id, proxy=proxy)
     if data is None:
-        logger.info(f"[detail] watch_page failed, falling back to API for {video_id}")
+        logger.info("[detail] watch_page failed, falling back to API for %s", video_id)
         data = await _get_via_api(video_id, proxy=proxy)
     if data is None:
-        logger.error(f"[detail] All methods failed for {video_id}")
+        logger.error("[detail] All methods failed for %s", video_id)
         return {"error": True, "reason": "All methods failed", "status": "UNAVAILABLE"}
 
     result = _parse_player_response(data, video_id)
     if result.get("error") and result.get("status") == "LOGIN_REQUIRED":
         # LOGIN_REQUIRED on watch page → try API (different client context)
-        logger.info(f"[detail] LOGIN_REQUIRED via watch_page, retrying with API for {video_id}")
+        logger.info("[detail] LOGIN_REQUIRED via watch_page, retrying with API for %s", video_id)
         api_data = await _get_via_api(video_id, proxy=proxy)
         if api_data:
             result = _parse_player_response(api_data, video_id)
 
-    logger.debug(f"[detail] {video_id} → error={result.get('error')} status={result.get('status')}")
+    logger.debug("[detail] %s → error=%s status=%s", video_id, result.get('error'), result.get('status'))
     return result

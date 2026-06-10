@@ -87,9 +87,13 @@ async def search_videos(
 ):
     @retry_on_failure(max_retries=3, delay=1)
     async def _():
-        start = (page - 1) * limit
         proxy = await proxy_manager.get_proxy()
-        results = await search_youtube(q, max_results=start + limit, sort=sort, proxy=proxy)
+        # Always fetch exactly `limit` results for page 1.
+        # For deeper pages we must over-fetch (YouTube has no offset API),
+        # but cap at 50 to avoid runaway requests.
+        fetch_n = min(page * limit, 50)
+        results = await search_youtube(q, max_results=fetch_n, sort=sort, proxy=proxy)
+        start   = (page - 1) * limit
         return {"query": q, "page": page, "limit": limit, "total": len(results), "results": results[start:start + limit]}
     try:
         return ApiResponse.ok(await _())

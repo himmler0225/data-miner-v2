@@ -10,12 +10,12 @@ _running_tasks: dict[str, asyncio.Task] = {}
 
 async def _run_job(job_id: str, coro_func):
     try:
-        logger.info(f"Job '{job_id}' started")
+        logger.info("Job '%s' started", job_id)
         result = await coro_func()
-        logger.info(f"Job '{job_id}' completed: {result}")
+        logger.info("Job '%s' completed: %s", job_id, result)
         return result
     except asyncio.CancelledError:
-        logger.warning(f"Job '{job_id}' cancelled")
+        logger.warning("Job '%s' cancelled", job_id)
         raise
     except Exception as e:
         logger.error(f"Job '{job_id}' failed: {e}", exc_info=True)

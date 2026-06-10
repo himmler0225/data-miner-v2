@@ -107,5 +107,5 @@ async def get_videos_by_region(
             seen.add(vid)
             unique.append(v)
 
-    logger.info(f"[location] gl={gl} query='{query}' → {len(unique)} video")
+    logger.info("[location] gl=%s query='%s' → %s video", gl, query, len(unique))
     return unique[:max_results]
