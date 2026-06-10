@@ -21,10 +21,8 @@ SERVICE_RATE_LIMITS = {
     "default": "50/minute",
 }
 
-
 def get_rate_limit(endpoint_type: str) -> str:
     return RATE_LIMITS.get(endpoint_type, "30/minute")
-
 
 def get_service_rate_limit(service_name: str) -> str:
     return SERVICE_RATE_LIMITS.get(service_name, SERVICE_RATE_LIMITS["default"])

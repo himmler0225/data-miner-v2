@@ -5,7 +5,6 @@ TikTok Trending Service
 from typing import Dict, Any
 from .base import TikTokBaseService
 
-
 class TrendingService(TikTokBaseService):
     """TikTok Trending Service"""
 

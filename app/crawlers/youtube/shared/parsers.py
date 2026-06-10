@@ -1,6 +1,5 @@
 from typing import Dict, List, Optional
 
-
 def get_channel_id_from_owner(video: dict) -> Optional[str]:
     owner_runs = video.get("ownerText", {}).get("runs", [{}])
     return (
@@ -10,7 +9,6 @@ def get_channel_id_from_owner(video: dict) -> Optional[str]:
         .get("browseId")
     )
 
-
 def extract_continuation_token(item: dict) -> Optional[str]:
     return (
         item.get("continuationItemRenderer", {})
@@ -18,7 +16,6 @@ def extract_continuation_token(item: dict) -> Optional[str]:
         .get("continuationCommand", {})
         .get("token")
     )
-
 
 def get_continuation_items(data: dict) -> List[dict]:
     commands = (
@@ -31,7 +28,6 @@ def get_continuation_items(data: dict) -> List[dict]:
         .get("appendContinuationItemsAction", {})
         .get("continuationItems", [])
     ) if commands else []
-
 
 def parse_video_renderer(video: dict) -> Dict:
     from ....utils import parse_view_count

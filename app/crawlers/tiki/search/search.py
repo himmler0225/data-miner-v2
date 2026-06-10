@@ -6,7 +6,6 @@ from .search_constants import SEARCH_URL, SEARCH_EXTRA_HEADERS
 
 logger = Logger.get(__name__)
 
-
 def extract_products(items: List[Dict]) -> List[Dict]:
     result = []
     for item in items:
@@ -57,7 +56,6 @@ def extract_products(items: List[Dict]) -> List[Dict]:
             "seller_product_id": item.get("seller_product_id"),
         })
     return result
-
 
 async def search_products(
     q: str,

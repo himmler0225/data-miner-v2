@@ -5,7 +5,6 @@ Utility to generate secure API keys
 import secrets
 import string
 
-
 def generate_api_key(length: int = 32) -> str:
     """
     Generate a secure random API key
@@ -19,7 +18,6 @@ def generate_api_key(length: int = 32) -> str:
     alphabet = string.ascii_letters + string.digits
     api_key = ''.join(secrets.choice(alphabet) for _ in range(length))
     return api_key
-
 
 if __name__ == "__main__":
     print("Generated API Keys:")

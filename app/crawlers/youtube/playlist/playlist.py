@@ -5,7 +5,6 @@ from ....config import get_youtube_api_url
 from ....config.constants import ENDPOINT_BROWSE
 from ....exceptions import YouTubeStructureChangedError
 
-
 def extract_playlists_tab_info(data):
     tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
     browse_id = None
@@ -24,14 +23,12 @@ def extract_playlists_tab_info(data):
         )
     return browse_id, params
 
-
 def extract_title(title_obj):
     if "simpleText" in title_obj:
         return title_obj["simpleText"]
     elif "runs" in title_obj and title_obj["runs"]:
         return "".join([run.get("text", "") for run in title_obj["runs"]])
     return ""
-
 
 async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
@@ -123,7 +120,6 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
                     })
 
     return playlists
-
 
 async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)

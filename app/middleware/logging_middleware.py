@@ -6,7 +6,6 @@ from app.config.logger import Logger
 
 logger = Logger.get(__name__)
 
-
 class LoggingMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

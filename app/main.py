@@ -32,7 +32,6 @@ from app.crawlers.youtube.live_ws_client import connect_background, disconnect_f
 
 logger = Logger.get(__name__)
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Data Miner API starting up...")
@@ -57,7 +56,6 @@ async def lifespan(app: FastAPI):
     await disconnect_from_nestjs()
     logger.info("NestJS WebSocket disconnected")
 
-
 app = FastAPI(
     title="Data Miner API",
     description="",
@@ -69,14 +67,12 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
-
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content=ApiResponse.fail(str(exc.detail)).model_dump(),
     )
-
 
 @app.middleware("http")
 async def add_process_time(request: Request, call_next):
@@ -105,7 +101,6 @@ app.include_router(youtube_router, prefix="/api", tags=["YouTube"])
 app.include_router(tiki_router, prefix="/api/tiki", tags=["Tiki"])
 app.include_router(tiktok_router, prefix="/api/tiktok", tags=["TikTok"])
 app.include_router(admin_router)
-
 
 @app.get("/health", tags=["Health"])
 async def health_check():

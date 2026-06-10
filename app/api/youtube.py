@@ -35,7 +35,6 @@ _SEARCH_TOPICS = {
 }
 _ALL_TOPICS = list(_CHANNEL_TOPICS.keys()) + list(_SEARCH_TOPICS.keys())
 
-
 @router.get("/videos/by-topic", summary="Videos by Topic")
 async def videos_by_topic(
     topic: str = Query(..., description=f"Topic: {', '.join(_ALL_TOPICS)}"),
@@ -74,7 +73,6 @@ async def videos_by_topic(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/videos/search", summary="Search Videos")
 @limiter.limit("30/minute")
 async def search_videos(
@@ -100,7 +98,6 @@ async def search_videos(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/videos/shorts", summary="Shorts Feed")
 async def get_videos_shorts(limit: int = Query(30, ge=1, le=50)):
     @retry_on_failure(max_retries=3, delay=1)
@@ -112,7 +109,6 @@ async def get_videos_shorts(limit: int = Query(30, ge=1, le=50)):
         return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/videos/live", summary="Live Videos")
 async def get_videos_live(
@@ -131,7 +127,6 @@ async def get_videos_live(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/videos/location", summary="Videos by Region")
 async def get_videos_location(
     gl: str = Query(...),
@@ -146,7 +141,6 @@ async def get_videos_location(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/videos/{video_id}", summary="Video Detail")
 async def video_detail(video_id: str):
     @retry_on_failure(max_retries=3, delay=1)
@@ -158,7 +152,6 @@ async def video_detail(video_id: str):
         return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/videos/{video_id}/comments", summary="Video Comments")
 async def get_comments(
@@ -178,7 +171,6 @@ async def get_comments(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/channels/{channel_id}", summary="Channel Info")
 async def channel_info(channel_id: str):
     @retry_on_failure(max_retries=3, delay=1)
@@ -190,7 +182,6 @@ async def channel_info(channel_id: str):
         return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/channels/{channel_id}/videos", summary="Channel Videos")
 async def channel_videos(
@@ -210,7 +201,6 @@ async def channel_videos(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/channels/{channel_id}/playlists", summary="Channel Playlists")
 async def channel_playlists(channel_id: str):
     @retry_on_failure(max_retries=3, delay=1)
@@ -222,7 +212,6 @@ async def channel_playlists(channel_id: str):
         return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/playlists/{playlist_id}/videos", summary="Playlist Videos")
 async def playlist_videos(playlist_id: str):

@@ -14,16 +14,14 @@ from .config.constants import (
 from app.config.logger import Logger
 from app.exceptions import YouTubeStructureChangedError
 
-_KEY_TTL = 3600  # 1 hour
+_KEY_TTL = 3600
 
 logger = Logger.get(__name__)
 _api_key_cache: dict = {"value": "", "expires": 0.0}
 
-# ── Shared connection pool ────────────────────────────────────────────────────
 # Keyed by proxy URL (or "" for direct). Reusing clients avoids TCP handshake
 # overhead on every crawler call (~50–200ms saved per request).
 _client_pool: dict[str, httpx.AsyncClient] = {}
-
 
 def _get_pooled_client(proxy: Optional[str], headers: Optional[dict], timeout: int) -> httpx.AsyncClient:
     key = proxy or ""
@@ -160,8 +158,7 @@ class _PooledClientContext:
         return self._client
 
     async def __aexit__(self, *_) -> None:
-        pass  # do not close — client is pooled and reused
-
+        pass
 
 def create_httpx_client(proxy: str = None, headers: dict = None, timeout: int = DEFAULT_TIMEOUT):
     """

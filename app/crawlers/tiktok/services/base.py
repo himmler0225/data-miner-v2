@@ -14,7 +14,6 @@ from urllib.parse import urlencode, urlparse
 # Import signature generators (path resolved by native.py via sys.path)
 from lib.signatures import Signer, get_X_Gnarly
 
-
 class TikTokBaseService:
     """Base service with shared functionality"""
 

@@ -6,7 +6,6 @@ from .reviews_constants import REVIEWS_URL, REVIEWS_EXTRA_HEADERS
 
 logger = Logger.get(__name__)
 
-
 def _extract_comment(comment: Dict) -> Dict:
     return {
         "id":         comment.get("id"),
@@ -18,7 +17,6 @@ def _extract_comment(comment: Dict) -> Dict:
             "avatar": comment.get("avatar_url"),
         },
     }
-
 
 def extract_review(review: Dict) -> Dict:
     images = [
@@ -64,7 +62,6 @@ def extract_review(review: Dict) -> Dict:
         "attribute_votes": review.get("vote_attributes"),
     }
 
-
 def extract_reviews_page(data: Dict) -> Dict:
     rating_summary = data.get("rating_summary") or {}
     return {
@@ -80,7 +77,6 @@ def extract_reviews_page(data: Dict) -> Dict:
         },
         "reviews": [extract_review(r) for r in data.get("data", [])],
     }
-
 
 async def get_reviews(
     product_id: int,
@@ -114,7 +110,6 @@ async def get_reviews(
         data = resp.json()
 
     return extract_reviews_page(data)
-
 
 async def get_all_reviews(
     product_id: int,

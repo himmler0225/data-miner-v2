@@ -11,7 +11,6 @@ from app.config.settings import (
 
 logger = Logger.get(__name__)
 
-
 def _build_ip_set() -> Set[str]:
     ips = set(_IPS_LIST)
     if not ips:
@@ -22,11 +21,9 @@ def _build_ip_set() -> Set[str]:
     logger.info("Loaded %s whitelisted IPs", len(ips))
     return ips
 
-
 WHITELISTED_IPS      = _build_ip_set()
 WHITELISTED_SERVICES = set(_SVC_LIST)
 WHITELIST_ENABLED    = ENABLE_IP_WHITELIST
-
 
 def is_ip_whitelisted(ip: str) -> bool:
     if not WHITELISTED_IPS:
@@ -34,13 +31,11 @@ def is_ip_whitelisted(ip: str) -> bool:
 
     return ip in WHITELISTED_IPS
 
-
 def is_service_whitelisted(service_name: Optional[str]) -> bool:
     if not WHITELISTED_SERVICES or not service_name:
         return False
 
     return service_name in WHITELISTED_SERVICES
-
 
 def _get_client_ip_from_scope(scope: Scope, headers: dict) -> str:
     forwarded_for = headers.get(b"x-forwarded-for", b"").decode()
@@ -57,7 +52,6 @@ def _get_client_ip_from_scope(scope: Scope, headers: dict) -> str:
 
     return "unknown"
 
-
 async def _send_403(send: Send) -> None:
     body = json.dumps({"detail": "Access denied: IP address or service not whitelisted"}).encode()
     await send({
@@ -69,7 +63,6 @@ async def _send_403(send: Send) -> None:
         ],
     })
     await send({"type": "http.response.body", "body": body, "more_body": False})
-
 
 class IPWhitelistMiddleware:
     def __init__(self, app: ASGIApp) -> None:

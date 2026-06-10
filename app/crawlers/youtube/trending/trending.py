@@ -16,11 +16,9 @@ from .trending_constants import TRENDING_URL
 
 logger = Logger.get(__name__)
 
-
 def _is_live_video(video: Dict) -> bool:
     duration = video.get("duration", "")
     return duration in ("0:00", "00:00")
-
 
 def extract_videos(items: List[Dict], rank_offset: int = 0, skip_live: bool = True) -> List[Dict]:
     results = []
@@ -42,7 +40,6 @@ def extract_videos(items: List[Dict], rank_offset: int = 0, skip_live: bool = Tr
         results.append(parsed)
     return results
 
-
 def extract_videos_from_item(item: Dict, rank_offset: int = 0) -> List[Dict]:
     if "carouselRenderer" in item:
         return extract_videos(item["carouselRenderer"].get("contents", []), rank_offset)
@@ -60,7 +57,6 @@ def extract_videos_from_item(item: Dict, rank_offset: int = 0) -> List[Dict]:
             return extract_videos(content["richShelfRenderer"].get("contents", []), rank_offset)
     return []
 
-
 def _parse_yt_initial_data(html: str) -> dict:
     match = re.search(r'var ytInitialData\s*=\s*', html)
     if not match:
@@ -76,7 +72,6 @@ def _parse_yt_initial_data(html: str) -> dict:
             f"Failed to parse ytInitialData: {e}",
             context={"offset": match.end()},
         )
-
 
 def _make_session(proxy: Optional[str], gl: str, hl: str) -> httpx.AsyncClient:
     ua = random.choice(USER_AGENTS)
@@ -106,7 +101,6 @@ def _make_session(proxy: Optional[str], gl: str, hl: str) -> httpx.AsyncClient:
     if proxies:
         kwargs["proxy"] = proxies
     return httpx.AsyncClient(**kwargs)
-
 
 async def _api_trending(proxy, max_results, filter_params, gl, hl) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
@@ -171,7 +165,6 @@ async def _api_trending(proxy, max_results, filter_params, gl, hl) -> List[Dict]
                     return collected[:max_results]
 
     return collected
-
 
 async def _html_trending(proxy, max_results, filter_params, gl, hl) -> List[Dict]:
     params = f"gl={gl}&hl={hl}"
@@ -243,7 +236,6 @@ async def _html_trending(proxy, max_results, filter_params, gl, hl) -> List[Dict
 
     return collected
 
-
 async def _search_trending(proxy, max_results, gl, hl) -> List[Dict]:
     # Datacenter IPs get feedNudgeRenderer instead of trending — search by view count as proxy.
     api_key = await get_youtube_api_key(proxy=proxy)
@@ -303,14 +295,12 @@ async def _search_trending(proxy, max_results, gl, hl) -> List[Dict]:
 
     return collected
 
-
 async def _safe(coro, label: str):
     """Run a coroutine, returning (result, None) or (None, exc) — never raises."""
     try:
         return await coro, None
     except Exception as exc:
         return None, (label, exc)
-
 
 async def get_trending_videos(
     proxy: Optional[str] = None,

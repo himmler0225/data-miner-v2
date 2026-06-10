@@ -10,7 +10,6 @@ from .shorts_constants import _SEEDLESS_PARAMS, _REEL_ENDPOINT
 
 logger = Logger.get(__name__)
 
-
 def _extract_text(obj: dict) -> str:
     if not obj:
         return ""
@@ -19,19 +18,15 @@ def _extract_text(obj: dict) -> str:
     runs = obj.get("runs", [])
     return "".join(r.get("text", "") for r in runs) if runs else ""
 
-
 def _next_endpoint(data: dict) -> dict:
     return data.get("replacementEndpoint", {}).get("reelWatchEndpoint", {})
-
 
 def _next_pos_params(data: dict) -> Optional[str]:
     raw = _next_endpoint(data).get("params")
     return unquote(raw) if raw else None
 
-
 def _shorts_url(video_id: str) -> str:
     return f"{YOUTUBE_BASE_URL}/shorts/{video_id}"
-
 
 def _parse_short(data: dict) -> Optional[dict]:
     pr = data.get("playerResponse", {})
@@ -61,7 +56,6 @@ def _parse_short(data: dict) -> Optional[dict]:
         "source": "playerResponse",
     }
 
-
 def _parse_short_from_replacement(data: dict) -> Optional[dict]:
     ep = _next_endpoint(data)
     video_id = ep.get("videoId")
@@ -81,7 +75,6 @@ def _parse_short_from_replacement(data: dict) -> Optional[dict]:
         "source": "replacementEndpoint",
     }
 
-
 def _find_reel_item_renderers(obj: Any) -> List[tuple]:
     items: List[tuple] = []
     if isinstance(obj, dict):
@@ -96,7 +89,6 @@ def _find_reel_item_renderers(obj: Any) -> List[tuple]:
         for item in obj:
             items.extend(_find_reel_item_renderers(item))
     return items
-
 
 def _parse_reel_item_renderer(item_type: str, item: dict) -> Optional[dict]:
     if item_type == "reel":
@@ -142,7 +134,6 @@ def _parse_reel_item_renderer(item_type: str, item: dict) -> Optional[dict]:
         "source": "search",
     }
 
-
 async def _fetch_shorts_from_search(client, api_key, query, seen_ids, max_per_query=15) -> List[Dict]:
     url = get_youtube_api_url(ENDPOINT_SEARCH, api_key) + "&prettyPrint=false"
     try:
@@ -167,7 +158,6 @@ async def _fetch_shorts_from_search(client, api_key, query, seen_ids, max_per_qu
                 break
     return shorts
 
-
 async def _bootstrap_session(client) -> None:
     for url in (f"{YOUTUBE_BASE_URL}/", f"{YOUTUBE_BASE_URL}/shorts/"):
         try:
@@ -181,7 +171,6 @@ async def _bootstrap_session(client) -> None:
                     logger.warning("[shorts] redirected to m.youtube.com — WEB context may cycle")
         except Exception as e:
             logger.warning("[shorts] init %s failed: %s", url, e)
-
 
 async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict]:
     batch: List[Dict] = []
@@ -264,7 +253,6 @@ async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict
             break
 
     return batch
-
 
 async def get_shorts_feed(proxy: str = None, max_results: int = 20) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)

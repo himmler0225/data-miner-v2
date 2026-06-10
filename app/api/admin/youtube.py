@@ -18,7 +18,6 @@ from ._tasks import _start_job
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
 
-
 @router.get("/debug/location")
 async def debug_location(lat: float = 10.8231, lng: float = 106.6297):
     proxy = await proxy_manager.get_proxy()
@@ -45,21 +44,17 @@ async def debug_location(lat: float = 10.8231, lng: float = 106.6297):
     except Exception as e:
         return ApiResponse.ok({"error": repr(e)})
 
-
 @router.post("/jobs/trending")
 async def trigger_trending():
     return _start_job("crawl_trending", crawl_trending_videos)
-
 
 @router.post("/jobs/shorts")
 async def trigger_shorts():
     return _start_job("crawl_shorts", crawl_shorts_videos)
 
-
 @router.post("/jobs/location")
 async def trigger_location():
     return _start_job("crawl_location", crawl_location_videos)
-
 
 @router.post("/jobs/keywords")
 async def trigger_keywords():

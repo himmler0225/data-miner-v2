@@ -7,17 +7,9 @@ from app.config.logger import Logger
 
 logger = Logger.get(__name__)
 
-_DEFAULT_TTL = 900  # 15 minutes
-
+_DEFAULT_TTL = 900
 
 class ProxyManager:
-    """
-    Sticky-session proxy manager.
-
-    Pins to one proxy for `ttl` seconds before rotating.
-    All requests within the TTL window use the same proxy → fewer IP changes,
-    lower latency overhead, and reduces the chance of hitting per-IP rate limits.
-    """
 
     def __init__(self, proxies: List[str], ttl: int = _DEFAULT_TTL):
         self._proxies:    List[str]     = [p for p in proxies if p]

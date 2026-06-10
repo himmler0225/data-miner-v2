@@ -7,7 +7,6 @@ from ....exceptions import YouTubeStructureChangedError
 from ..shared import parse_video_renderer, extract_continuation_token, get_continuation_items
 from .search_constants import SORT_OPTIONS
 
-
 def extract_video_items(items: List[Dict]) -> List[Dict]:
     results = []
     for item in items:
@@ -24,7 +23,6 @@ def extract_video_items(items: List[Dict]) -> List[Dict]:
         )
         results.append(parsed)
     return results
-
 
 async def search_youtube(query: str, max_results: int = 50, proxy: str = None, sort: str = "relevance") -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)

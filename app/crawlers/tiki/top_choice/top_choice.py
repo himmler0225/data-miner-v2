@@ -6,7 +6,6 @@ from .top_choice_constants import TOP_CHOICE_URL, TOP_CHOICE_EXTRA_HEADERS
 
 logger = Logger.get(__name__)
 
-
 def extract_top_choice_items(items: List[Dict]) -> List[Dict]:
     result = []
     for item in items:
@@ -63,7 +62,6 @@ def extract_top_choice_items(items: List[Dict]) -> List[Dict]:
             "impression_info":         item.get("impression_info"),
         })
     return result
-
 
 async def get_top_choice(
     version: int = 2,

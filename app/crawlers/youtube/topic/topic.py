@@ -8,7 +8,6 @@ from ..playlist.playlist import get_videos_from_playlist
 
 logger = Logger.get(__name__)
 
-
 def _extract_playlist_ids(data: Dict) -> List[Dict]:
     playlists = []
     tabs = (
@@ -31,7 +30,6 @@ def _extract_playlist_ids(data: Dict) -> List[Dict]:
                 if pid and pid.startswith("RDCLAK"):  # music radio playlist ID prefix
                     playlists.append({"playlist_id": pid, "title": title, "shelf": shelf_title})
     return playlists
-
 
 async def browse_topic_channel(
     channel_id: str,

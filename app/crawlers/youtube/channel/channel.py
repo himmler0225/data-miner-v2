@@ -6,7 +6,6 @@ from ....config import get_youtube_headers, get_youtube_api_url
 from ....config.constants import ENDPOINT_BROWSE, CHANNEL_TAB_VIDEOS
 from ....exceptions import YouTubeStructureChangedError
 
-
 def extract_video_items(items: List[Dict]) -> List[Dict]:
     videos = []
     for item in items:
@@ -24,7 +23,6 @@ def extract_video_items(items: List[Dict]) -> List[Dict]:
             "public": video.get("publishedTimeText", {}).get("simpleText", ""),
         })
     return videos
-
 
 async def get_channel_videos(channel_id: str, proxy: str = None, max_results: int = 100) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)

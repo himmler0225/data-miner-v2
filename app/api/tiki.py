@@ -16,7 +16,6 @@ from app.utils import retry_on_failure
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
 
-
 @router.get("/products/search", summary="Search For Products")
 @limiter.limit("15/minute")
 async def search_products_endpoint(
@@ -45,7 +44,6 @@ async def search_products_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/products/sales", summary="Flash Sale Tiki")
 @limiter.limit("15/minute")
 async def get_flash_sales_endpoint(
@@ -64,7 +62,6 @@ async def get_flash_sales_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/products/top-choice", summary="Top Deals Tiki")
 @limiter.limit("15/minute")
 async def get_top_choice_endpoint(
@@ -81,7 +78,6 @@ async def get_top_choice_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/products/maybe-you-like", summary="Tiki Recommend")
 @limiter.limit("15/minute")
 async def get_maybe_you_like_endpoint(
@@ -97,7 +93,6 @@ async def get_maybe_you_like_endpoint(
         return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/products/{product_id}", summary="Tiki Product Detail")
 @limiter.limit("15/minute")
@@ -116,7 +111,6 @@ async def get_product_detail_endpoint(
         return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/products/{product_id}/reviews", summary="Tiki Product Reviews")
 @limiter.limit("15/minute")

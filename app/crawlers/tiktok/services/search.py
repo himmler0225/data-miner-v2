@@ -6,7 +6,6 @@ import time
 from typing import Dict, Any
 from .base import TikTokBaseService
 
-
 class SearchService(TikTokBaseService):
     """TikTok Search Service"""
 

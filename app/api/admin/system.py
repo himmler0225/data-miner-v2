@@ -18,7 +18,6 @@ from ._tasks import _running_tasks, _start_job
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
 
-
 @router.get("/client-pool")
 async def client_pool_status():
     """View current client fingerprint pool."""
@@ -27,12 +26,10 @@ async def client_pool_status():
         "sample": sample_client_info(),
     })
 
-
 @router.get("/client-pool/all")
 async def client_pool_all():
     """View entire pool (for debug / DB export)."""
     return ApiResponse.ok({"snapshots": get_all_snapshots()})
-
 
 @router.get("/proxy/debug")
 async def proxy_debug():
@@ -51,17 +48,14 @@ async def proxy_debug():
     except Exception as e:
         return ApiResponse.ok({"error": repr(e)})
 
-
 @router.get("/proxy/status")
 async def proxy_status():
     return ApiResponse.ok(proxy_manager.status())
-
 
 @router.post("/proxy/rotate")
 async def proxy_rotate():
     proxy_manager.rotate()
     return ApiResponse.ok({"rotated": True})
-
 
 @router.get("/proxy/test")
 async def test_proxy():
@@ -75,7 +69,6 @@ async def test_proxy():
         return ApiResponse.ok({"status": "ok", "exit_ip": ip, "proxy": proxy_url})
     except Exception as e:
         return ApiResponse.ok({"status": "error", "proxy": proxy_url, "error": repr(e)})
-
 
 @router.get("/jobs")
 async def list_jobs():
@@ -97,17 +90,14 @@ async def list_jobs():
         })
     return ApiResponse.ok({"jobs": jobs})
 
-
 @router.post("/jobs/cleanup")
 async def trigger_cleanup():
     return _start_job("cleanup_data", cleanup_old_data)
-
 
 @router.post("/jobs/health")
 async def trigger_health():
     result = await health_check_job()
     return ApiResponse.ok({"status": "done", "result": result})
-
 
 @router.post("/jobs/{job_id}/reset")
 async def reset_job(job_id: str):

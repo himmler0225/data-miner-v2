@@ -20,7 +20,6 @@ from app.config.settings import (
 
 logger = Logger.get(__name__)
 
-
 def configure_jobs():
     scheduler = get_scheduler()
 

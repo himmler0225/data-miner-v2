@@ -6,7 +6,6 @@ from ....config.constants import ENDPOINT_SEARCH, SEARCH_FILTER_LIVE
 from ....exceptions import YouTubeStructureChangedError
 from ..shared import extract_continuation_token, get_continuation_items
 
-
 def extract_live_videos(items: List[Dict]) -> List[Dict]:
     videos = []
     for item in items:
@@ -27,7 +26,6 @@ def extract_live_videos(items: List[Dict]) -> List[Dict]:
             "is_live": True,
         })
     return videos
-
 
 async def get_all_live_videos(q: str = "", proxy: str = None, max_results: int = 100) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)

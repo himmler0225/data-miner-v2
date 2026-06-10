@@ -6,7 +6,6 @@ from .maybe_you_like_constants import MAYBE_YOU_LIKE_URL, MAYBE_YOU_LIKE_EXTRA_H
 
 logger = Logger.get(__name__)
 
-
 def extract_maybe_you_like_items(items: List[Dict]) -> List[Dict]:
     result = []
     for item in items:
@@ -47,7 +46,6 @@ def extract_maybe_you_like_items(items: List[Dict]) -> List[Dict]:
             "impression_info":     item.get("impression_info"),
         })
     return result
-
 
 async def get_maybe_you_like(
     rf: str = "rotate_by_ctr",

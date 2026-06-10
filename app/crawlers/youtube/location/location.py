@@ -11,7 +11,6 @@ from .location_constants import _GL_TIMEZONE
 
 logger = Logger.get(__name__)
 
-
 def _get_region_context(gl: str, hl: str) -> dict:
     """InnerTube context with overridden gl/hl for geographic targeting."""
     client: dict = {
@@ -35,7 +34,6 @@ def _get_region_context(gl: str, hl: str) -> dict:
         "request": {"useSsl": True, "internalExperimentFlags": [], "consistencyTokenJars": []},
     }
 
-
 def _extract_videos(items: List[Dict]) -> List[Dict]:
     results = []
     for item in items:
@@ -47,7 +45,6 @@ def _extract_videos(items: List[Dict]) -> List[Dict]:
             continue
         results.append(parse_video_renderer(video))
     return results
-
 
 async def get_videos_by_region(
     gl: str,

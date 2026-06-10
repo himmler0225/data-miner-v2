@@ -10,14 +10,12 @@ logger = Logger.get(__name__)
 _BASE_URL = "https://api.sociavault.com/v1"
 _API_KEY  = SOCIAVAULT_API_KEY
 
-
 def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
         base_url=_BASE_URL,
         headers={"X-API-Key": _API_KEY},
         timeout=20,
     )
-
 
 async def search_keyword(
     query: str,
@@ -37,7 +35,6 @@ async def search_keyword(
     logger.info("[sociavault] search query=%r", query)
     return r.json()
 
-
 async def get_video_info(
     url: str,
     get_transcript: bool = False,
@@ -53,7 +50,6 @@ async def get_video_info(
     logger.info("[sociavault] video-info url=%s", url[:60])
     return r.json()
 
-
 async def get_comments(
     url: str,
     cursor: int = 0,
@@ -63,7 +59,6 @@ async def get_comments(
         r.raise_for_status()
     logger.info("[sociavault] comments url=%s", url[:60])
     return r.json()
-
 
 async def get_profile(handle: str) -> Dict:
     async with _client() as c:

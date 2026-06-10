@@ -13,7 +13,6 @@ from app.schemas.response import ApiResponse
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
 
-
 @router.get("/search", summary="TikTok Search (native → SociaVault fallback)")
 @limiter.limit("15/minute")
 async def tiktok_search(
@@ -41,7 +40,6 @@ async def tiktok_search(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/trending", summary="TikTok Trending (native)")
 @limiter.limit("15/minute")
 async def tiktok_trending(
@@ -55,7 +53,6 @@ async def tiktok_trending(
         return ApiResponse.ok(await trending_native(count=count, region=region, language=language))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/video-info", summary="TikTok Video Info (SociaVault)")
 @limiter.limit("15/minute")
@@ -71,7 +68,6 @@ async def tiktok_video_info(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/comments", summary="TikTok Comments (SociaVault)")
 @limiter.limit("15/minute")
 async def tiktok_comments(
@@ -84,7 +80,6 @@ async def tiktok_comments(
         return ApiResponse.ok(await get_comments(url=url, cursor=cursor))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/profiles/{handle}", summary="TikTok Profile (SociaVault)")
 @limiter.limit("15/minute")

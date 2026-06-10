@@ -10,7 +10,6 @@ from .channel_enricher_constants import _CHANNEL_CONCURRENCY, _PLAYLIST_ITEM_CON
 
 logger = Logger.get(__name__)
 
-
 async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
     async def _info() -> None:
         try:
@@ -57,7 +56,6 @@ async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
     logger.info("[enricher] start %s", channel_id)
     await asyncio.gather(_info(), _videos(), _playlists())
     logger.info("[enricher] done  %s", channel_id)
-
 
 async def enrich_channels_batch(
     channel_ids: Set[str],

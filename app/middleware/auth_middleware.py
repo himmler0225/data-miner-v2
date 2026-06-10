@@ -9,7 +9,6 @@ logger = Logger.get(__name__)
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
-
 def get_api_keys() -> set[str]:
     if not API_KEYS:
         logger.warning("No API_KEYS configured in environment variables")
@@ -19,9 +18,7 @@ def get_api_keys() -> set[str]:
     logger.info(f"Loaded {len(keys)} API keys from environment")
     return keys
 
-
 VALID_API_KEYS = get_api_keys()
-
 
 async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> str:
     if not VALID_API_KEYS:
@@ -48,7 +45,6 @@ async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> s
 
     logger.debug(f"Valid API key used: {api_key[:8]}...")
     return api_key
-
 
 def get_optional_api_key(api_key: Optional[str] = Security(api_key_header)) -> Optional[str]:
     """Returns key if valid, None otherwise."""

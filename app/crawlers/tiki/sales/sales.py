@@ -6,7 +6,6 @@ from .sales_constants import FLASH_SALE_URL, FLASH_SALE_EXTRA_HEADERS
 
 logger = Logger.get(__name__)
 
-
 def extract_flash_sale_items(items: List[Dict]) -> List[Dict]:
     result = []
     for item in items:
@@ -34,7 +33,6 @@ def extract_flash_sale_items(items: List[Dict]) -> List[Dict]:
             "brand":               product.get("brand_name"),
         })
     return result
-
 
 async def get_flash_sale(
     per_page: int = 20,

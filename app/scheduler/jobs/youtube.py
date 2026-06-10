@@ -27,7 +27,6 @@ _failure_counts: dict[str, int] = {}
 # Max concurrent YouTube requests per batch job (tunable via env).
 from app.config.settings import BATCH_CONCURRENCY
 
-
 async def _with_retry(
     coro_func: Callable[..., Coroutine],
     *args: Any,
@@ -50,34 +49,27 @@ async def _with_retry(
             )
             await asyncio.sleep(wait)
 
-
 def _is_circuit_open(job_id: str) -> bool:
     return _failure_counts.get(job_id, 0) >= MAX_CONSECUTIVE_FAILURES
 
-
 def _record_success(job_id: str) -> None:
     _failure_counts[job_id] = 0
-
 
 def _record_failure(job_id: str) -> int:
     count = _failure_counts.get(job_id, 0) + 1
     _failure_counts[job_id] = count
     return count
 
-
 def reset_circuit(job_id: str) -> None:
     _failure_counts.pop(job_id, None)
 
-
 def get_failure_counts() -> dict[str, int]:
     return dict(_failure_counts)
-
 
 def _log_circuit_open(job_id: str) -> None:
     logger.critical(
         f"Job '{job_id}' disabled after {MAX_CONSECUTIVE_FAILURES} consecutive failures — manual intervention required"
     )
-
 
 # gl (country code) determines location — YouTube ignores lat/lng.
 LOCATION_TARGETS = [
@@ -117,7 +109,6 @@ LOCATION_TARGETS = [
     # Oceania
     {"name": "Sydney",       "gl": "AU", "hl": "en", "query": "Sydney"},
 ]
-
 
 async def crawl_trending_videos():
     job_id = "crawl_trending"
@@ -161,7 +152,6 @@ async def crawl_trending_videos():
         count = _record_failure(job_id)
         logger.error(f"Trending crawl error (attempt #{count}): {e}", exc_info=True)
         return {"success": False, "error": str(e)}
-
 
 async def crawl_shorts_videos():
     job_id = "crawl_shorts"
@@ -266,7 +256,6 @@ async def crawl_shorts_videos():
         logger.error(f"Shorts crawl error (attempt #{count}): {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
-
 async def crawl_location_videos():
     job_id = "crawl_location"
 
@@ -345,7 +334,6 @@ async def crawl_location_videos():
         count = _record_failure(job_id)
         logger.error(f"Location crawl error (attempt #{count}): {e}", exc_info=True)
         return {"success": False, "error": str(e)}
-
 
 async def crawl_popular_keywords():
     job_id = "crawl_keywords"
@@ -427,7 +415,6 @@ async def crawl_popular_keywords():
         logger.error(f"Keyword crawl error (attempt #{count}): {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
-
 async def cleanup_old_data():
     try:
         logger.info("Starting scheduled data cleanup...")
@@ -438,7 +425,6 @@ async def cleanup_old_data():
     except Exception as e:
         logger.error(f"Data cleanup error: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
-
 
 async def crawl_live_videos():
     job_id = "crawl_live"
@@ -476,7 +462,6 @@ async def crawl_live_videos():
         count = _record_failure(job_id)
         logger.error(f"Live video crawl error (attempt #{count}): {e}", exc_info=True)
         return {"success": False, "error": str(e)}
-
 
 async def health_check_job():
     try:

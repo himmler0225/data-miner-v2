@@ -6,7 +6,6 @@ from app.types import ChannelInfo, SearchVideo, Comment
 
 logger = Logger.get(__name__)
 
-
 def _make_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
         base_url=INGEST_API_URL,
@@ -17,13 +16,11 @@ def _make_client() -> httpx.AsyncClient:
         timeout=30,
     )
 
-
 def _safe_int(value) -> Optional[int]:
     if value is None:
         return None
     cleaned = "".join(c for c in str(value) if c.isdigit())
     return int(cleaned) if cleaned else None
-
 
 async def _post(path: str, payload: dict, label: str) -> bool:
     async with _make_client() as client:
@@ -35,7 +32,6 @@ async def _post(path: str, payload: dict, label: str) -> bool:
             logger.warning(f"{label} failed: {e!r}")
             return False
 
-
 async def ingest_channel(data: ChannelInfo) -> bool:
     return await _post("/internal/ingest/channel", {
         "channelId": data.get("channel_id"),
@@ -46,7 +42,6 @@ async def ingest_channel(data: ChannelInfo) -> bool:
         "subscriberCount": data.get("subscriber_count") or None,
         "description": data.get("description") or None,
     }, "ingest_channel")
-
 
 async def ingest_search(
     query: str,
@@ -76,7 +71,6 @@ async def ingest_search(
         f"ingest_search(query='{query}')",
     )
 
-
 async def ingest_detail(video_id: str, detail: dict) -> bool:
     if detail.get("error"):
         payload = {
@@ -104,7 +98,6 @@ async def ingest_detail(video_id: str, detail: dict) -> bool:
         payload,
         f"ingest_detail(video_id={video_id})",
     )
-
 
 async def ingest_trending(
     videos: List[Dict],
@@ -137,7 +130,6 @@ async def ingest_trending(
         f"ingest_trending(category={category!r})",
     )
 
-
 async def ingest_shorts(videos: List[Dict]) -> bool:
     normalized = []
     for v in videos:
@@ -162,7 +154,6 @@ async def ingest_shorts(videos: List[Dict]) -> bool:
     if not normalized:
         return True
     return await _post("/internal/ingest/shorts", {"videos": normalized}, "ingest_shorts")
-
 
 async def ingest_channel_videos(
     channel_id: str,
@@ -196,7 +187,6 @@ async def ingest_channel_videos(
         f"ingest_channel_videos(channel_id={channel_id})",
     )
 
-
 async def ingest_playlists(channel_id: str, playlists: List[Dict]) -> bool:
     normalized = []
     for p in playlists:
@@ -216,7 +206,6 @@ async def ingest_playlists(channel_id: str, playlists: List[Dict]) -> bool:
         {"channelId": channel_id, "playlists": normalized},
         f"ingest_playlists(channel_id={channel_id})",
     )
-
 
 async def ingest_playlist_items(playlist_id: str, videos: List[Dict]) -> bool:
     normalized = []
@@ -239,7 +228,6 @@ async def ingest_playlist_items(playlist_id: str, videos: List[Dict]) -> bool:
         {"playlistId": playlist_id, "videos": normalized},
         f"ingest_playlist_items(playlist_id={playlist_id})",
     )
-
 
 async def ingest_comments(video_id: str, comments: List[Comment]) -> bool:
     normalized = []

@@ -9,7 +9,6 @@ from .detail_constants import YOUTUBE_WATCH_URL
 
 logger = Logger.get(__name__)
 
-
 def _extract_player_response(html: str) -> Optional[dict]:
     """
     Parse ytInitialPlayerResponse from YouTube watch page HTML.
@@ -35,7 +34,6 @@ def _extract_player_response(html: str) -> Optional[dict]:
                     return None
     return None
 
-
 async def _get_via_watch_page(video_id: str, proxy: str = None) -> Optional[dict]:
     headers = get_youtube_headers()
     params = {"v": video_id, "hl": CLIENT_HL, "gl": CLIENT_GL}
@@ -49,7 +47,6 @@ async def _get_via_watch_page(video_id: str, proxy: str = None) -> Optional[dict
         logger.warning("[detail/watch_page] ytInitialPlayerResponse not found for %s", video_id)
         return None
     return data
-
 
 async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
     try:
@@ -71,7 +68,6 @@ async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
         logger.warning("[detail/api] HTTP %s for %s", resp.status_code, video_id)
         return None
     return resp.json()
-
 
 def _parse_player_response(data: dict, video_id: str) -> dict:
     status = data.get("playabilityStatus", {})
@@ -108,7 +104,6 @@ def _parse_player_response(data: dict, video_id: str) -> dict:
         "category": microformat.get("category", ""),
         "publish_date": microformat.get("publishDate", ""),
     }
-
 
 async def get_video_detail(video_id: str, proxy: str = None) -> dict:
     data = await _get_via_watch_page(video_id, proxy=proxy)

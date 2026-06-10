@@ -4,7 +4,6 @@ from ....utils import get_youtube_api_key, get_context, create_httpx_client
 from ....config import get_youtube_api_url
 from ....config.constants import ENDPOINT_BROWSE
 
-
 def parse_channel_info(data) -> Dict:
     header = data.get("header", {}).get("pageHeaderRenderer", {})
     metadata = data.get("metadata", {}).get("channelMetadataRenderer", {})
@@ -50,7 +49,6 @@ def parse_channel_info(data) -> Dict:
         "subscriber_count": subscribers,
         "description": metadata.get("description", ""),
     }
-
 
 async def get_channel_info(channel_id: str, proxy: str = None) -> Dict:
     api_key = await get_youtube_api_key(proxy=proxy)

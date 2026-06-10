@@ -7,7 +7,6 @@ logger = Logger.get(__name__)
 
 _running_tasks: dict[str, asyncio.Task] = {}
 
-
 async def _run_job(job_id: str, coro_func):
     try:
         logger.info("Job '%s' started", job_id)
@@ -22,7 +21,6 @@ async def _run_job(job_id: str, coro_func):
         raise
     finally:
         _running_tasks.pop(job_id, None)
-
 
 def _start_job(job_id: str, coro_func) -> dict:
     if job_id in _running_tasks and not _running_tasks[job_id].done():

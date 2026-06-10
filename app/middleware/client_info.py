@@ -15,7 +15,6 @@ _SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
 # UA fragments that identify programmatic clients — cannot fake a real browser fingerprint
 _BOT_UA_FRAGMENTS = ("python", "httpx", "aiohttp", "curl", "wget", "go-http", "java", "libwww")
 
-
 class ClientSnapshot(TypedDict):
     ip: str
     user_agent: str
@@ -23,15 +22,12 @@ class ClientSnapshot(TypedDict):
     accept_encoding: str
     ts: float  # unix timestamp — used for TTL / DB sync
 
-
 # In-memory pool, capped at 500 most recent snapshots.
 # Can be swapped for Redis SET or a DB table without changing the interface.
 _pool: deque[ClientSnapshot] = deque(maxlen=500)
 
-
 def get_pool_size() -> int:
     return len(_pool)
-
 
 def sample_client_info() -> Optional[ClientSnapshot]:
     """Return a random snapshot from the pool, or None if empty."""
@@ -39,10 +35,8 @@ def sample_client_info() -> Optional[ClientSnapshot]:
         return None
     return random.choice(list(_pool))
 
-
 def get_all_snapshots() -> list[ClientSnapshot]:
     return list(_pool)
-
 
 def _extract_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For", "")
@@ -53,13 +47,11 @@ def _extract_ip(request: Request) -> str:
         return real_ip
     return request.client.host if request.client else ""
 
-
 def _is_browser_ua(ua: str) -> bool:
     if not ua:
         return False
     ua_lower = ua.lower()
     return not any(frag in ua_lower for frag in _BOT_UA_FRAGMENTS)
-
 
 class ClientInfoMiddleware(BaseHTTPMiddleware):
     """

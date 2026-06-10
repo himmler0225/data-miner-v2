@@ -6,7 +6,6 @@ from .product_detail_constants import PRODUCT_DETAIL_URL, PRODUCT_DETAIL_EXTRA_H
 
 logger = Logger.get(__name__)
 
-
 def extract_product_detail(data: Dict) -> Dict:
     specifications = []
     for spec_group in data.get("specifications", []):
@@ -68,7 +67,6 @@ def extract_product_detail(data: Dict) -> Dict:
             for c in data.get("breadcrumbs", [])
         ],
     }
-
 
 async def get_product_detail(
     product_id: int,

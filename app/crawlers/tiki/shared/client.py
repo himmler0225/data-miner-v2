@@ -8,10 +8,8 @@ from .client_constants import GUEST_TOKEN_URL, DEFAULT_DELIVERY_ZONE, BASE_UA, S
 
 logger = Logger.get(__name__)
 
-
 def generate_trackity_id() -> str:
     return str(uuid.uuid4())
-
 
 async def fetch_guest_token(proxy: Optional[str] = None) -> str:
     transport = httpx.AsyncHTTPTransport(proxy=proxy) if proxy else None
@@ -31,13 +29,11 @@ async def fetch_guest_token(proxy: Optional[str] = None) -> str:
     logger.info("Tiki guest token acquired: %s...", token[:8])
     return token
 
-
 async def create_tiki_session(proxy: Optional[str] = None) -> Tuple[str, str]:
     """Create a new (trackity_id, guest_token) pair for a crawl session."""
     trackity_id = generate_trackity_id()
     guest_token = await fetch_guest_token(proxy=proxy)
     return trackity_id, guest_token
-
 
 def build_cookies(trackity_id: str, guest_token: str) -> Dict:
     return {
@@ -48,7 +44,6 @@ def build_cookies(trackity_id: str, guest_token: str) -> Dict:
         ),
         "delivery_zone": DEFAULT_DELIVERY_ZONE,
     }
-
 
 def build_headers(
     guest_token: str,
@@ -72,7 +67,6 @@ def build_headers(
     if extra:
         headers.update(extra)
     return headers
-
 
 @asynccontextmanager
 async def create_tiki_client(

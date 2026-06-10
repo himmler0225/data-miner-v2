@@ -6,7 +6,6 @@ import sys
 from typing import Dict, Any
 from .base import TikTokBaseService
 
-
 class ChallengeService(TikTokBaseService):
     """TikTok Challenge/Hashtag Service"""
 
@@ -64,7 +63,6 @@ class ChallengeService(TikTokBaseService):
             "error": "No challengeInfo in response",
             "raw": data
         }
-
 
     def get_challenge_videos(
         self,

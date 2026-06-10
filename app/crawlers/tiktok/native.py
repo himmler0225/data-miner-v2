@@ -1,10 +1,3 @@
-"""
-Async wrappers around the sync services/ crawlers.
-Adds tiktok/ to sys.path so services/ can resolve lib/signatures imports.
-
-Token warming: module-level cache so each search reuses the token
-instead of re-fetching TikTok homepage on every call.
-"""
 import asyncio
 from app.config.logger import Logger
 import os
@@ -19,18 +12,14 @@ _TIKTOK_DIR = os.path.dirname(__file__)
 if _TIKTOK_DIR not in sys.path:
     sys.path.insert(0, _TIKTOK_DIR)
 
-# ── Token cache ───────────────────────────────────────────────────────────────
-
 _token_cache: Dict = {"value": None, "expires": 0.0}
 _TOKEN_TTL   = 55.0   # TikTok sessions ~1 min, refresh 5s sớm
 _warm_lock   = asyncio.Lock()
-
 
 def _cached_token() -> Optional[str]:
     if _token_cache["value"] and _time.time() < _token_cache["expires"]:
         return _token_cache["value"]
     return None
-
 
 async def warm_token() -> Optional[str]:
     """Fetch a real msToken from TikTok homepage and cache it. Call on startup."""
@@ -49,9 +38,6 @@ async def warm_token() -> Optional[str]:
         except Exception as e:
             logger.warning("[native] token warm failed: %s", e)
         return None
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _extract_video(item: Dict) -> Dict:
     video  = item.get("item", item)
@@ -88,7 +74,6 @@ def _extract_video(item: Dict) -> Dict:
         },
         "tags": tags,
     }
-
 
 def _extract_sociavault_video(aweme: Dict) -> Dict:
     author = aweme.get("author") or {}
@@ -136,7 +121,6 @@ def _extract_sociavault_video(aweme: Dict) -> Dict:
         "tags": tags,
     }
 
-
 def _format_sociavault_search(raw: Dict) -> Dict:
     inner   = raw.get("data") or {}
     items   = inner.get("search_item_list") or {}
@@ -154,7 +138,6 @@ def _format_sociavault_search(raw: Dict) -> Dict:
         "source":   "sociavault",
     }
 
-
 def _pick_proxy(pool: Optional[List[str]] = None) -> Optional[Dict]:
     from app.config.urls import PROXY_LIST
     proxies = pool or PROXY_LIST
@@ -162,7 +145,6 @@ def _pick_proxy(pool: Optional[List[str]] = None) -> Optional[Dict]:
         return None
     url = random.choice(proxies)
     return {"http": url, "https": url}
-
 
 def _inject_token(service) -> bool:
     """
@@ -181,9 +163,6 @@ def _inject_token(service) -> bool:
                         delay_before_request=0, **kw)
     service._make_request = _fast_make_request
     return True
-
-
-# ── Public functions ──────────────────────────────────────────────────────────
 
 async def search_native(
     keyword: str,
@@ -216,7 +195,6 @@ async def search_native(
     result["count"]  = len(result["videos"])
     logger.info("[native/search] keyword=%r cached=%s count=%d", keyword, from_cache, result["count"])
     return result
-
 
 async def trending_native(
     count: int = 20,

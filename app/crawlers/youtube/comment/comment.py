@@ -10,7 +10,6 @@ from app.config.logger import Logger
 
 logger = Logger.get(__name__)
 
-
 def _build_comment_sort_token(video_id: str, sort: str = "top") -> str:
     """
     Construct YouTube comment continuation token with sort order.
@@ -32,7 +31,6 @@ def _build_comment_sort_token(video_id: str, sort: str = "top") -> str:
     f6         = bytes([0x32, len(f6_content)]) + f6_content
 
     return base64.urlsafe_b64encode(f2 + f3 + f6).decode().rstrip("=")
-
 
 async def fetch_replies(client, continuation_token: str, context: dict, proxy: str = None, max_depth: int = 2) -> List[Dict]:
     replies = []
@@ -74,7 +72,6 @@ async def fetch_replies(client, continuation_token: str, context: dict, proxy: s
                     )
 
     return replies
-
 
 def extract_comment_continuation_token(data: dict) -> str:
     # Path 1: onResponseReceivedEndpoints
@@ -138,7 +135,6 @@ def extract_comment_continuation_token(data: dict) -> str:
 
     return None
 
-
 def parse_comment_entities(data: dict) -> dict:
     result = {}
     for m in data.get("frameworkUpdates", {}).get("entityBatchUpdate", {}).get("mutations", []):
@@ -159,7 +155,6 @@ def parse_comment_entities(data: dict) -> dict:
                 "replies": parse_view_count(comment.get("toolbar", {}).get("replyCount")),
             }
     return result
-
 
 async def get_video_comments(
     video_id: str,

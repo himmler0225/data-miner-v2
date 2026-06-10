@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
-
 class ApiResponse(BaseModel):
     success: bool
     data:    Any                    = None
@@ -26,7 +25,6 @@ class ApiResponse(BaseModel):
             error=error,
             meta={"timestamp": _ts(), **meta},
         )
-
 
 def _ts() -> str:
     return datetime.now(timezone.utc).isoformat()

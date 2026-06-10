@@ -15,8 +15,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-# ── Formatters ────────────────────────────────────────────────────────────────
-
 _RESET   = "\033[0m"
 _BOLD    = "\033[1m"
 _DIM     = "\033[2m"
@@ -29,7 +27,6 @@ _LEVEL_COLOR = {
     "ERROR":    "\033[31m",
     "CRITICAL": "\033[35m\033[1m",
 }
-
 
 class _ColorFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -49,7 +46,6 @@ class _ColorFormatter(logging.Formatter):
             f"{msg}"
         )
 
-
 class _JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         data: Dict[str, Any] = {
@@ -67,17 +63,7 @@ class _JSONFormatter(logging.Formatter):
             data["extra"] = record.extra_data
         return json.dumps(data, ensure_ascii=False)
 
-
-# ── Logger class ──────────────────────────────────────────────────────────────
-
 class Logger:
-    """
-    Singleton-configured logger factory.
-
-    Logger.setup() configures handlers once on the root logger.
-    Logger.get(__name__) returns the standard child logger for that module.
-    Python's logging module caches loggers by name — no duplicate instances.
-    """
 
     _root:       str  = "data_miner"
     _configured: bool = False
