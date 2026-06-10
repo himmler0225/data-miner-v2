@@ -4,10 +4,10 @@ from typing import Optional
 from ....utils import create_httpx_client, get_youtube_api_key, get_context, parse_view_count
 from ....config import get_youtube_headers, get_youtube_api_url
 from ....config.constants import ENDPOINT_PLAYER, CLIENT_HL, CLIENT_GL
-from ....config.logging_config import get_logger
+from app.config.logger import Logger
 from .detail_constants import YOUTUBE_WATCH_URL
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 def _extract_player_response(html: str) -> Optional[dict]:

@@ -1,4 +1,3 @@
-import os
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from app.scheduler.scheduler import get_scheduler
@@ -11,20 +10,26 @@ from app.scheduler.jobs import (
     cleanup_old_data,
     health_check_job,
 )
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
+from app.config.settings import (
+    ENABLE_SCHEDULER,
+    TRENDING_CRON, KEYWORDS_CRON, SHORTS_CRON,
+    LIVE_CRON, LOCATION_CRON, CLEANUP_CRON,
+    HEALTH_CHECK_INTERVAL,
+)
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 def configure_jobs():
     scheduler = get_scheduler()
 
-    enable_scheduler = os.getenv("ENABLE_SCHEDULER", "true").lower() == "true"
+    enable_scheduler = ENABLE_SCHEDULER
     if not enable_scheduler:
         logger.info("Scheduler is disabled via ENABLE_SCHEDULER env var")
         return
 
-    trending_schedule = os.getenv("TRENDING_CRON", "0 7 * * *")
+    trending_schedule = TRENDING_CRON
     scheduler.add_job(
         crawl_trending_videos,
         trigger=CronTrigger.from_crontab(trending_schedule),
@@ -35,7 +40,7 @@ def configure_jobs():
     )
     logger.info(f"Scheduled job: Crawl Trending Videos (cron: {trending_schedule})")
 
-    shorts_schedule = os.getenv("SHORTS_CRON", "0 9 * * *")
+    shorts_schedule = SHORTS_CRON
     scheduler.add_job(
         crawl_shorts_videos,
         trigger=CronTrigger.from_crontab(shorts_schedule),
@@ -46,7 +51,7 @@ def configure_jobs():
     )
     logger.info(f"Scheduled job: Crawl Shorts Feed (cron: {shorts_schedule})")
 
-    location_schedule = os.getenv("LOCATION_CRON", "0 6 * * *")
+    location_schedule = LOCATION_CRON
     scheduler.add_job(
         crawl_location_videos,
         trigger=CronTrigger.from_crontab(location_schedule),
@@ -57,7 +62,7 @@ def configure_jobs():
     )
     logger.info(f"Scheduled job: Crawl Location Videos (cron: {location_schedule})")
 
-    keywords_schedule = os.getenv("KEYWORDS_CRON", "0 8 * * *")
+    keywords_schedule = KEYWORDS_CRON
     scheduler.add_job(
         crawl_popular_keywords,
         trigger=CronTrigger.from_crontab(keywords_schedule),
@@ -68,7 +73,7 @@ def configure_jobs():
     )
     logger.info(f"Scheduled job: Crawl Popular Keywords (cron: {keywords_schedule})")
 
-    live_schedule = os.getenv("LIVE_CRON", "*/5 * * * *")
+    live_schedule = LIVE_CRON
     scheduler.add_job(
         crawl_live_videos,
         trigger=CronTrigger.from_crontab(live_schedule),
@@ -79,7 +84,7 @@ def configure_jobs():
     )
     logger.info(f"Scheduled job: Crawl Live Videos (cron: {live_schedule})")
 
-    cleanup_schedule = os.getenv("CLEANUP_CRON", "0 2 * * 0")
+    cleanup_schedule = CLEANUP_CRON
     scheduler.add_job(
         cleanup_old_data,
         trigger=CronTrigger.from_crontab(cleanup_schedule),
@@ -90,7 +95,7 @@ def configure_jobs():
     )
     logger.info(f"Scheduled job: Cleanup Old Data (cron: {cleanup_schedule})")
 
-    health_interval_minutes = int(os.getenv("HEALTH_CHECK_INTERVAL", "60"))
+    health_interval_minutes = HEALTH_CHECK_INTERVAL
     scheduler.add_job(
         health_check_job,
         trigger=IntervalTrigger(minutes=health_interval_minutes),

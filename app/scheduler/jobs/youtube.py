@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import os
 import random
@@ -13,18 +14,18 @@ from app.crawlers.youtube.live import get_all_live_videos
 from app.crawlers.youtube.channel_enricher import enrich_channels_batch
 from app.crawlers.youtube.live_ws_client import push_live_videos
 from app.exceptions import YouTubeStructureChangedError
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
 from app.config.urls import proxy_manager
 from app.ingest import youtube as ingest_client
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
-# Circuit breaker: job bị tắt sau N lỗi liên tiếp.
+# Circuit breaker: job is disabled after N consecutive failures.
 MAX_CONSECUTIVE_FAILURES = 5
 _failure_counts: dict[str, int] = {}
 
-# Số request YouTube đồng thời tối đa mỗi batch job (tunable qua env).
-BATCH_CONCURRENCY = int(os.getenv("BATCH_CONCURRENCY", "5"))
+# Max concurrent YouTube requests per batch job (tunable via env).
+from app.config.settings import BATCH_CONCURRENCY
 
 
 async def _with_retry(
@@ -38,14 +39,14 @@ async def _with_retry(
         try:
             return await coro_func(*args, **kwargs)
         except YouTubeStructureChangedError:
-            raise  # lỗi cấu trúc không giải quyết được bằng retry
+            raise  # structure errors cannot be resolved by retry
         except Exception as e:
             if attempt == max_attempts:
                 raise
             wait = base_delay * attempt
             logger.warning(
-                f"Lần thử {attempt}/{max_attempts} cho {coro_func.__name__} thất bại: "
-                f"{e!r} — thử lại sau {wait}s"
+                f"Attempt {attempt}/{max_attempts} for {coro_func.__name__} failed: "
+                f"{e!r} — retrying in {wait}s"
             )
             await asyncio.sleep(wait)
 
@@ -74,13 +75,13 @@ def get_failure_counts() -> dict[str, int]:
 
 def _log_circuit_open(job_id: str) -> None:
     logger.critical(
-        f"Job '{job_id}' đã tắt sau {MAX_CONSECUTIVE_FAILURES} lỗi liên tiếp — cần can thiệp thủ công"
+        f"Job '{job_id}' disabled after {MAX_CONSECUTIVE_FAILURES} consecutive failures — manual intervention required"
     )
 
 
-# gl (country code) quyết định vị trí — YouTube bỏ qua lat/lng.
+# gl (country code) determines location — YouTube ignores lat/lng.
 LOCATION_TARGETS = [
-    # Đông Nam Á
+    # Southeast Asia
     {"name": "Hanoi",        "gl": "VN", "hl": "vi", "query": "Hà Nội"},
     {"name": "Ho Chi Minh",  "gl": "VN", "hl": "vi", "query": "Sài Gòn"},
     {"name": "Bangkok",      "gl": "TH", "hl": "th", "query": "กรุงเทพ"},
@@ -88,32 +89,32 @@ LOCATION_TARGETS = [
     {"name": "Singapore",    "gl": "SG", "hl": "en", "query": "Singapore"},
     {"name": "Manila",       "gl": "PH", "hl": "en", "query": "Manila"},
     {"name": "Kuala Lumpur", "gl": "MY", "hl": "ms", "query": "Kuala Lumpur"},
-    # Đông Á
+    # East Asia
     {"name": "Tokyo",        "gl": "JP", "hl": "ja", "query": "東京"},
     {"name": "Seoul",        "gl": "KR", "hl": "ko", "query": "서울"},
     {"name": "Shanghai",     "gl": "CN", "hl": "zh-Hans", "query": "上海"},
-    # Nam Á
+    # South Asia
     {"name": "Mumbai",       "gl": "IN", "hl": "hi", "query": "Mumbai"},
-    # Trung Đông
+    # Middle East
     {"name": "Dubai",        "gl": "AE", "hl": "ar", "query": "دبي"},
     {"name": "Cairo",        "gl": "EG", "hl": "ar", "query": "القاهرة"},
-    # Châu Âu
+    # Europe
     {"name": "London",       "gl": "GB", "hl": "en", "query": "London"},
     {"name": "Paris",        "gl": "FR", "hl": "fr", "query": "Paris"},
     {"name": "Berlin",       "gl": "DE", "hl": "de", "query": "Berlin"},
     {"name": "Moscow",       "gl": "RU", "hl": "ru", "query": "Москва"},
-    # Bắc Mỹ
+    # North America
     {"name": "New York",     "gl": "US", "hl": "en", "query": "New York"},
     {"name": "Los Angeles",  "gl": "US", "hl": "en", "query": "Los Angeles"},
     {"name": "Toronto",      "gl": "CA", "hl": "en", "query": "Toronto"},
     {"name": "Mexico City",  "gl": "MX", "hl": "es", "query": "Ciudad de México"},
-    # Nam Mỹ
+    # South America
     {"name": "Sao Paulo",    "gl": "BR", "hl": "pt", "query": "São Paulo"},
     {"name": "Buenos Aires", "gl": "AR", "hl": "es", "query": "Buenos Aires"},
-    # Châu Phi
+    # Africa
     {"name": "Lagos",        "gl": "NG", "hl": "en", "query": "Lagos"},
     {"name": "Johannesburg", "gl": "ZA", "hl": "en", "query": "Johannesburg"},
-    # Châu Đại Dương
+    # Oceania
     {"name": "Sydney",       "gl": "AU", "hl": "en", "query": "Sydney"},
 ]
 

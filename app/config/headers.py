@@ -39,12 +39,11 @@ USER_AGENTS = (
 )
 
 ACCEPT_LANGUAGES = [
-    "en-US,en;q=0.9",
-    "en-GB,en;q=0.9,en-US;q=0.8",
-    "en-US,en;q=0.9,vi;q=0.8",
-    "en-US,en;q=0.9,zh-CN;q=0.8",
-    "en-US,en;q=0.8,fr;q=0.7",
     "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+    "vi-VN,vi;q=0.9,en;q=0.8",
+    "vi-VN,vi;q=1.0,en-US;q=0.8",
+    "vi;q=0.9,en-US;q=0.8,en;q=0.7",
+    "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.6",
 ]
 
 SCREEN_RESOLUTIONS = [

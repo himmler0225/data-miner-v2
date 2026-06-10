@@ -5,11 +5,11 @@ from ....utils import get_youtube_api_key, get_visitor_data, get_client_version,
 from ....config import get_youtube_headers, get_youtube_api_url
 from ....config.constants import ENDPOINT_SEARCH, CLIENT_NAME
 from ....exceptions import YouTubeStructureChangedError
-from ....config.logging_config import get_logger
+from app.config.logger import Logger
 from ..shared import parse_video_renderer, extract_continuation_token, get_continuation_items
 from .location_constants import _GL_TIMEZONE
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 def _get_region_context(gl: str, hl: str) -> dict:

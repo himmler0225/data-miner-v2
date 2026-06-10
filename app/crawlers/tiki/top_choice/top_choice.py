@@ -1,10 +1,10 @@
-import logging
+from app.config.logger import Logger
 from typing import Dict, List, Optional
 
 from ..shared import create_tiki_client, create_tiki_session, build_cookies, build_headers
 from .top_choice_constants import TOP_CHOICE_URL, TOP_CHOICE_EXTRA_HEADERS
 
-logger = logging.getLogger(__name__)
+logger = Logger.get(__name__)
 
 
 def extract_top_choice_items(items: List[Dict]) -> List[Dict]:

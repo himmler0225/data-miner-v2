@@ -2,9 +2,9 @@ import time
 import json
 from starlette.types import ASGIApp, Scope, Receive, Send, Message
 from starlette.datastructures import MutableHeaders
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 class LoggingMiddleware:

@@ -1,12 +1,12 @@
-import os
 import asyncio
 import socketio
-from ....config.logging_config import get_logger
+from app.config.logger import Logger
+from ....config.settings import NESTJS_WS_URL, CRAWLER_WS_KEY
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
-_NESTJS_WS_URL = os.getenv("NESTJS_WS_URL", "http://localhost:3000")
-_CRAWLER_WS_KEY = os.getenv("CRAWLER_WS_KEY", "")
+_NESTJS_WS_URL  = NESTJS_WS_URL
+_CRAWLER_WS_KEY = CRAWLER_WS_KEY
 
 sio = socketio.AsyncClient(
     reconnection=True,

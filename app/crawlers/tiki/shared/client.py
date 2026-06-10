@@ -1,12 +1,12 @@
 import uuid
 import httpx
-import logging
+from app.config.logger import Logger
 from contextlib import asynccontextmanager
 from typing import Dict, Optional, Tuple
 
 from .client_constants import GUEST_TOKEN_URL, DEFAULT_DELIVERY_ZONE, BASE_UA, SEC_CH_UA
 
-logger = logging.getLogger(__name__)
+logger = Logger.get(__name__)
 
 
 def generate_trackity_id() -> str:
@@ -33,7 +33,7 @@ async def fetch_guest_token(proxy: Optional[str] = None) -> str:
 
 
 async def create_tiki_session(proxy: Optional[str] = None) -> Tuple[str, str]:
-    """Tạo cặp (trackity_id, guest_token) mới. Dùng khi bắt đầu phiên crawl."""
+    """Create a new (trackity_id, guest_token) pair for a crawl session."""
     trackity_id = generate_trackity_id()
     guest_token = await fetch_guest_token(proxy=proxy)
     return trackity_id, guest_token
@@ -54,7 +54,7 @@ def build_headers(
     guest_token: str,
     extra: Optional[Dict] = None,
     ua: Optional[str] = None,
-    lang: str = "en-US,en;q=0.9,vi;q=0.8",
+    lang: str = "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
 ) -> Dict:
     headers = {
         "accept":             "application/json, text/plain, */*",

@@ -9,11 +9,12 @@ from app.crawlers.tiki.product_detail import get_product_detail
 from app.crawlers.tiki.reviews import get_reviews, get_all_reviews
 
 from app.config.urls import proxy_manager
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
+from app.schemas.response import ApiResponse
 from app.utils import retry_on_failure
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 @router.get("/products/search", summary="Search For Products")
@@ -37,10 +38,10 @@ async def search_products_endpoint(
             category_id=category_id, price_min=price_min, price_max=price_max,
             proxy=proxy,
         )
-        return {"query": q, "page": page, "limit": limit, **data}
+        return ApiResponse.ok({"query": q, "page": page, "limit": limit, **data})
 
     try:
-        return await _()
+        return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -56,10 +57,10 @@ async def get_flash_sales_endpoint(
     async def _():
         proxy = await proxy_manager.get_proxy()
         products = await get_flash_sale(per_page=per_page, proxy=proxy)
-        return {"total": len(products), "products": products}
+        return ApiResponse.ok({"total": len(products), "products": products})
 
     try:
-        return await _()
+        return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -76,7 +77,7 @@ async def get_top_choice_endpoint(
         return await get_top_choice(proxy=proxy)
 
     try:
-        return await _()
+        return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -93,7 +94,7 @@ async def get_maybe_you_like_endpoint(
         return await get_maybe_you_like(proxy=proxy)
 
     try:
-        return await _()
+        return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -112,7 +113,7 @@ async def get_product_detail_endpoint(
         return await get_product_detail(product_id=product_id, spid=spid, proxy=proxy)
 
     try:
-        return await _()
+        return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -144,6 +145,6 @@ async def get_reviews_endpoint(
         )
 
     try:
-        return await _()
+        return ApiResponse.ok(await _())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

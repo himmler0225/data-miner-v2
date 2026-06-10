@@ -1,42 +1,31 @@
 import json
-import os
+import os  # needed for dynamic SERVICE_TOKEN_{name} lookups
 from typing import Set, Optional
 from starlette.types import ASGIApp, Scope, Receive, Send
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
+from app.config.settings import (
+    APP_ENV, ENABLE_IP_WHITELIST,
+    WHITELISTED_IPS as _IPS_LIST,
+    WHITELISTED_SERVICES as _SVC_LIST,
+)
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
-def get_whitelisted_ips() -> Set[str]:
-    whitelist_env = os.getenv("WHITELISTED_IPS", "")
-
-    if not whitelist_env:
+def _build_ip_set() -> Set[str]:
+    ips = set(_IPS_LIST)
+    if not ips:
         logger.warning("No IP whitelist configured - all IPs will be allowed")
         return set()
-
-    ips = {ip.strip() for ip in whitelist_env.split(",") if ip.strip()}
-
-    if os.getenv("APP_ENV", "development") == "development":
+    if APP_ENV == "development":
         ips.update({"127.0.0.1", "::1", "localhost"})
-
-    logger.info(f"Loaded {len(ips)} whitelisted IPs")
+    logger.info("Loaded %s whitelisted IPs", len(ips))
     return ips
 
 
-def get_whitelisted_services() -> Set[str]:
-    services_env = os.getenv("WHITELISTED_SERVICES", "")
-
-    if not services_env:
-        return set()
-
-    services = {s.strip() for s in services_env.split(",") if s.strip()}
-    logger.info(f"Loaded {len(services)} whitelisted services")
-    return services
-
-
-WHITELISTED_IPS = get_whitelisted_ips()
-WHITELISTED_SERVICES = get_whitelisted_services()
-WHITELIST_ENABLED = os.getenv("ENABLE_IP_WHITELIST", "false").lower() == "true"
+WHITELISTED_IPS      = _build_ip_set()
+WHITELISTED_SERVICES = set(_SVC_LIST)
+WHITELIST_ENABLED    = ENABLE_IP_WHITELIST
 
 
 def is_ip_whitelisted(ip: str) -> bool:
@@ -108,12 +97,12 @@ class IPWhitelistMiddleware:
         if service_name and service_token:
             expected_token = os.getenv(f"SERVICE_TOKEN_{service_name.upper()}")
             if expected_token and service_token == expected_token and is_service_whitelisted(service_name):
-                logger.debug(f"Request from whitelisted service: {service_name}")
+                logger.debug("Request from whitelisted service: %s", service_name)
                 await self.app(scope, receive, send)
                 return
 
         if is_ip_whitelisted(client_ip):
-            logger.debug(f"Request from whitelisted IP: {client_ip}")
+            logger.debug("Request from whitelisted IP: %s", client_ip)
             await self.app(scope, receive, send)
             return
 

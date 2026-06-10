@@ -5,10 +5,10 @@ from ..channel_info.channel_info import get_channel_info
 from ..channel.channel import get_channel_videos
 from ..playlist.playlist import get_playlist_videos, get_videos_from_playlist
 from app.ingest import youtube as ingest_client
-from ....config.logging_config import get_logger
+from app.config.logger import Logger
 from .channel_enricher_constants import _CHANNEL_CONCURRENCY, _PLAYLIST_ITEM_CONCURRENCY
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:

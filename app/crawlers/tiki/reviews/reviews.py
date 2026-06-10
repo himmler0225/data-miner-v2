@@ -1,10 +1,10 @@
-import logging
+from app.config.logger import Logger
 from typing import Dict, List, Optional
 
 from ..shared import create_tiki_client, create_tiki_session, build_cookies, build_headers
 from .reviews_constants import REVIEWS_URL, REVIEWS_EXTRA_HEADERS
 
-logger = logging.getLogger(__name__)
+logger = Logger.get(__name__)
 
 
 def _extract_comment(comment: Dict) -> Dict:
@@ -27,7 +27,7 @@ def extract_review(review: Dict) -> Dict:
         if img.get("full_path")
     ]
 
-    # API trả comments là list trực tiếp, không phải {"data": [...]}
+    # API returns comments as a direct list, not {"data": [...]}
     raw_comments = review.get("comments", [])
     if isinstance(raw_comments, dict):
         raw_comments = raw_comments.get("data", [])

@@ -1,7 +1,9 @@
+from __future__ import annotations
 import asyncio
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
+from app.schemas.response import ApiResponse
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 _running_tasks: dict[str, asyncio.Task] = {}
 
@@ -24,7 +26,7 @@ async def _run_job(job_id: str, coro_func):
 
 def _start_job(job_id: str, coro_func) -> dict:
     if job_id in _running_tasks and not _running_tasks[job_id].done():
-        return {"status": "already_running", "job": job_id}
+        return ApiResponse.ok({"status": "already_running", "job": job_id})
     task = asyncio.create_task(_run_job(job_id, coro_func))
     _running_tasks[job_id] = task
-    return {"status": "started", "job": job_id}
+    return ApiResponse.ok({"status": "started", "job": job_id})

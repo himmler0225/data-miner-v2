@@ -1,12 +1,12 @@
-import os
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from fastapi import Request
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
+from app.config.settings import RATE_LIMIT_DEFAULT, RATE_LIMIT_BURST, RATE_LIMIT_STORAGE
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 def get_api_key_from_request(request: Request) -> str:
@@ -35,11 +35,8 @@ def get_identifier(request: Request) -> str:
 
 limiter = Limiter(
     key_func=get_identifier,
-    default_limits=[
-        os.getenv("RATE_LIMIT_DEFAULT", "100/hour"),
-        os.getenv("RATE_LIMIT_BURST", "20/minute"),
-    ],
-    storage_uri=os.getenv("RATE_LIMIT_STORAGE", "memory://"),  # Use Redis in production
+    default_limits=[RATE_LIMIT_DEFAULT, RATE_LIMIT_BURST],
+    storage_uri=RATE_LIMIT_STORAGE,
     headers_enabled=True,
 )
 

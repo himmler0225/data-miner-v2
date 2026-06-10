@@ -1,17 +1,17 @@
-import os
 import httpx
 from typing import Dict, List, Optional
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
+from app.config.settings import INGEST_API_URL, INGEST_SERVICE_KEY
 from app.types import ChannelInfo, SearchVideo, Comment
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 def _make_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        base_url=os.getenv("INGEST_API_URL", "http://localhost:3000"),
+        base_url=INGEST_API_URL,
         headers={
-            "X-Service-Key": os.getenv("INGEST_SERVICE_KEY", ""),
+            "X-Service-Key": INGEST_SERVICE_KEY,
             "Content-Type": "application/json",
         },
         timeout=30,
@@ -63,7 +63,7 @@ async def ingest_search(
             "title": v.get("title") or None,
             "channelId": v.get("channel_id") or None,
             "channel": v.get("channel") or None,
-            "viewCount": v.get("view_count"),  # giữ 0, không ép thành None
+            "viewCount": v.get("view_count"),  # keep 0, do not coerce to None
             "duration": v.get("duration") or None,
             "publishedTime": v.get("published_time") or None,
             "thumbnails": v.get("thumbnails") or None,
@@ -121,7 +121,7 @@ async def ingest_trending(
             "title": v.get("title") or None,
             "channelId": v.get("channel_id") or None,
             "channel": v.get("channel") or None,
-            "viewCount": v.get("view_count"),  # giữ 0, không ép thành None
+            "viewCount": v.get("view_count"),  # keep 0, do not coerce to None
             "duration": v.get("duration") or None,
             "publishedTime": v.get("published_time") or None,
             "thumbnails": v.get("thumbnails") or None,
@@ -155,7 +155,7 @@ async def ingest_shorts(videos: List[Dict]) -> bool:
             "url": v.get("url") or f"https://www.youtube.com/shorts/{video_id}",
             "channelId": v.get("channel_id") or None,
             "channelName": v.get("channel_name") or None,
-            "viewCount": v.get("view_count"),  # giữ 0, không ép thành None
+            "viewCount": v.get("view_count"),  # keep 0, do not coerce to None
             "duration": duration,
             "thumbnails": v.get("thumbnails") or None,
         })

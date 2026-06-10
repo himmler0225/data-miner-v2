@@ -5,10 +5,10 @@ from ....utils import get_context, get_youtube_api_key, create_httpx_client, par
 from ....config import get_youtube_headers, get_youtube_api_url
 from ....config.urls import YOUTUBE_BASE_URL
 from ....config.constants import ENDPOINT_SEARCH
-from ....config.logging_config import get_logger
+from app.config.logger import Logger
 from .shorts_constants import _SEEDLESS_PARAMS, _REEL_ENDPOINT
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 def _extract_text(obj: dict) -> str:

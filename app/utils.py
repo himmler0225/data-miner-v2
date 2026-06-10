@@ -11,12 +11,12 @@ from .config.urls import YOUTUBE_BASE_URL, get_proxy
 from .config.constants import (
     CLIENT_NAME, CLIENT_VERSION, CLIENT_HL, CLIENT_GL, DEFAULT_TIMEOUT
 )
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
 from app.exceptions import YouTubeStructureChangedError
 
 _KEY_TTL = 3600  # 1 hour
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 _api_key_cache: dict = {"value": "", "expires": 0.0}
 _visitor_data_cache: dict = {"value": "", "expires": 0.0}
 _client_version_cache: dict = {"value": "", "expires": 0.0}
@@ -183,7 +183,7 @@ def retry_on_failure(max_retries=3, delay=1):
                     return await func(*args, **kwargs)
                 except YouTubeStructureChangedError as e:
                     logger.critical(
-                        f"Cấu trúc YouTube thay đổi trong {func.__name__}: {e}",
+                        f"YouTube structure changed in {func.__name__}: {e}",
                         extra={"extra_data": {"context": e.context}}
                     )
                     raise HTTPException(status_code=502, detail=f"YouTube structure changed: {e}")

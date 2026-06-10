@@ -1,10 +1,10 @@
-import logging
+from app.config.logger import Logger
 from typing import Dict, List, Optional
 
 from ..shared import create_tiki_client, create_tiki_session, build_cookies, build_headers
 from .search_constants import SEARCH_URL, SEARCH_EXTRA_HEADERS
 
-logger = logging.getLogger(__name__)
+logger = Logger.get(__name__)
 
 
 def extract_products(items: List[Dict]) -> List[Dict]:

@@ -1,12 +1,36 @@
-from typing import List, Dict
+import base64
+from typing import List, Dict, Literal
 
 from ....utils import get_youtube_api_key, get_context, create_httpx_client, parse_view_count
 from ....config import get_youtube_api_url
 from ....config.constants import ENDPOINT_NEXT
 from ....exceptions import YouTubeStructureChangedError
-from ....config.logging_config import get_logger
+from app.config.logger import Logger
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
+
+
+def _build_comment_sort_token(video_id: str, sort: str = "top") -> str:
+    """
+    Construct YouTube comment continuation token with sort order.
+    Protobuf reverse-engineered from YouTube InnerTube /next endpoint.
+    sort="newest" → field 3 = 6 (COMMENT_SORT_ORDER_BY_TIME)
+    sort="top"    → no sort field (YouTube default)
+    """
+    vid = video_id.encode()
+    n = len(vid)
+
+    inner_vid  = bytes([0x12, n]) + vid
+    f2         = bytes([0x12, len(inner_vid)]) + inner_vid
+    f3         = bytes([0x18, 0x06]) if sort == "newest" else b""
+
+    inner4     = bytes([0x22, n]) + vid + bytes([0x30, 0x01, 0x78, 0x02])
+    f4         = bytes([0x22, len(inner4)]) + inner4
+    f8         = bytes([0x42, 0x10]) + b"comments-section"
+    f6_content = f4 + f8
+    f6         = bytes([0x32, len(f6_content)]) + f6_content
+
+    return base64.urlsafe_b64encode(f2 + f3 + f6).decode().rstrip("=")
 
 
 async def fetch_replies(client, continuation_token: str, context: dict, proxy: str = None, max_depth: int = 2) -> List[Dict]:
@@ -136,21 +160,30 @@ def parse_comment_entities(data: dict) -> dict:
     return result
 
 
-async def get_video_comments(video_id: str, proxy: str = None, max_comments: int = 100) -> List[Dict]:
-    api_key = await get_youtube_api_key(proxy=proxy)
+async def get_video_comments(
+    video_id: str,
+    proxy: str = None,
+    max_comments: int = 100,
+    sort: Literal["top", "newest"] = "top",
+) -> List[Dict]:
+    api_key  = await get_youtube_api_key(proxy=proxy)
     url_next = get_youtube_api_url(ENDPOINT_NEXT, api_key)
-    context = get_context()
+    context  = get_context()
     comments = []
 
     async with create_httpx_client(proxy=proxy) as client:
-        resp = await client.post(url_next, json={"context": context, "videoId": video_id})
-        resp.raise_for_status()
-        data = resp.json()
-
-        continuation_token = extract_comment_continuation_token(data)
-        if not continuation_token:
-            logger.warning(f"No comment continuation token for {video_id} — comments may be disabled or hidden")
-            return []
+        if sort == "newest":
+            # Skip the page-load step — use a pre-built sort token directly
+            continuation_token = _build_comment_sort_token(video_id, "newest")
+            logger.info("Using pre-built newest-sort token for %s", video_id)
+        else:
+            resp = await client.post(url_next, json={"context": context, "videoId": video_id})
+            resp.raise_for_status()
+            data = resp.json()
+            continuation_token = extract_comment_continuation_token(data)
+            if not continuation_token:
+                logger.warning("No comment continuation token for %s — comments may be disabled", video_id)
+                return []
 
         while continuation_token and len(comments) < max_comments:
             resp = await client.post(url_next, json={"context": context, "continuation": continuation_token})

@@ -5,7 +5,8 @@ from app.utils import get_youtube_api_key, get_context, create_httpx_client
 from app.config import get_youtube_headers, get_youtube_api_url
 from app.config.constants import ENDPOINT_SEARCH, SEARCH_FILTER_LOCATION
 from app.config.urls import proxy_manager
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
+from app.schemas.response import ApiResponse
 from app.scheduler.jobs import (
     crawl_trending_videos,
     crawl_shorts_videos,
@@ -15,7 +16,7 @@ from app.scheduler.jobs import (
 from ._tasks import _start_job
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 @router.get("/debug/location")
@@ -35,14 +36,14 @@ async def debug_location(lat: float = 10.8231, lng: float = 106.6297):
         async with create_httpx_client(proxy=proxy, headers=headers) as client:
             resp = await client.post(search_url, json=payload)
             data = resp.json()
-        return {
+        return ApiResponse.ok({
             "status_code": resp.status_code,
             "top_keys": list(data.keys()),
             "contents_keys": list(data.get("contents", {}).keys()),
             "raw_preview": json.dumps(data, ensure_ascii=False)[:5000],
-        }
+        })
     except Exception as e:
-        return {"error": repr(e)}
+        return ApiResponse.ok({"error": repr(e)})
 
 
 @router.post("/jobs/trending")

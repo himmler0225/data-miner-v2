@@ -3,9 +3,9 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 scheduler = AsyncIOScheduler()
 

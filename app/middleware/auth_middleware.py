@@ -1,23 +1,21 @@
-import os
 from typing import Optional
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
-from app.config.logging_config import get_logger
+from app.config.logger import Logger
+from app.config.settings import API_KEYS
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 
 def get_api_keys() -> set[str]:
-    api_keys_env = os.getenv("API_KEYS", "")
-
-    if not api_keys_env:
+    if not API_KEYS:
         logger.warning("No API_KEYS configured in environment variables")
         return set()
 
-    keys = {key.strip() for key in api_keys_env.split(",") if key.strip()}
+    keys = set(API_KEYS)
     logger.info(f"Loaded {len(keys)} API keys from environment")
     return keys
 

@@ -9,11 +9,11 @@ from ....config import get_youtube_headers, get_youtube_api_url
 from ....config.constants import ENDPOINT_BROWSE, ENDPOINT_SEARCH, SORT_VIEW_COUNT, DEFAULT_TIMEOUT
 from ....config.headers import USER_AGENTS
 from ....exceptions import YouTubeStructureChangedError
-from ....config.logging_config import get_logger
+from app.config.logger import Logger
 from ..shared import parse_video_renderer, extract_continuation_token, get_continuation_items
 from .trending_constants import TRENDING_URL
 
-logger = get_logger(__name__)
+logger = Logger.get(__name__)
 
 
 def _is_live_video(video: Dict) -> bool:

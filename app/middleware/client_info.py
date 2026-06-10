@@ -1,3 +1,4 @@
+from __future__ import annotations
 import random
 import time
 from collections import deque
@@ -8,10 +9,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-# Các path không cần capture (health check, docs, admin debug)
+# Paths to skip capturing (health check, docs, admin debug)
 _SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
 
-# UA của programmatic clients — không dùng được để fake browser fingerprint
+# UA fragments that identify programmatic clients — cannot fake a real browser fingerprint
 _BOT_UA_FRAGMENTS = ("python", "httpx", "aiohttp", "curl", "wget", "go-http", "java", "libwww")
 
 
@@ -20,11 +21,11 @@ class ClientSnapshot(TypedDict):
     user_agent: str
     accept_language: str
     accept_encoding: str
-    ts: float  # unix timestamp — dùng cho TTL / DB sync sau này
+    ts: float  # unix timestamp — used for TTL / DB sync
 
 
-# Pool in-memory, tối đa 500 snapshot gần nhất.
-# Sau này có thể swap thành Redis SET hoặc DB table mà không thay đổi interface.
+# In-memory pool, capped at 500 most recent snapshots.
+# Can be swapped for Redis SET or a DB table without changing the interface.
 _pool: deque[ClientSnapshot] = deque(maxlen=500)
 
 
@@ -33,7 +34,7 @@ def get_pool_size() -> int:
 
 
 def sample_client_info() -> Optional[ClientSnapshot]:
-    """Lấy ngẫu nhiên 1 snapshot từ pool, trả None nếu pool rỗng."""
+    """Return a random snapshot from the pool, or None if empty."""
     if not _pool:
         return None
     return random.choice(list(_pool))
@@ -62,10 +63,10 @@ def _is_browser_ua(ua: str) -> bool:
 
 class ClientInfoMiddleware(BaseHTTPMiddleware):
     """
-    Capture IP + browser fingerprint từ mỗi request vào pool in-memory.
+    Capture IP + browser fingerprint from each request into an in-memory pool.
 
-    Dữ liệu này được dùng để randomize User-Agent / Accept-Language
-    khi gọi YouTube InnerTube API, làm cho request trông giống browser thật.
+    Used to randomize User-Agent / Accept-Language when calling the YouTube
+    InnerTube API, making requests look like real browser traffic.
     """
 
     async def dispatch(self, request: Request, call_next: callable) -> Response:
