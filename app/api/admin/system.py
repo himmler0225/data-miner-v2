@@ -3,7 +3,7 @@ import httpx
 from fastapi import APIRouter, Depends
 from app.middleware import verify_api_key, sample_client_info, get_pool_size
 from app.middleware.client_info import get_all_snapshots
-from app.config.urls import proxy_manager
+from app.config.urls import proxy_manager, proxy_manager_us
 from app.config.logger import Logger
 from app.schemas.response import ApiResponse
 from app.scheduler.jobs import (
@@ -31,44 +31,29 @@ async def client_pool_all():
     """View entire pool (for debug / DB export)."""
     return ApiResponse.ok({"snapshots": get_all_snapshots()})
 
-@router.get("/proxy/debug")
-async def proxy_debug():
-    from app.config.settings import API_KEYS as _keys; keys_raw = ",".join(_keys)
-    keys = [k.strip() for k in keys_raw.split(",") if k.strip()]
-    if not keys:
-        return ApiResponse.ok({"error": "PROXY_KEYS is empty in .env", "keys_raw": keys_raw})
-    key = keys[0]
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                "https://proxyxoay.shop/api/get.php",
-                params={"key": key, "nhamang": "Random", "tinhthanh": "0"},
-            )
-            return ApiResponse.ok({"key": key[:8] + "...", "status_code": resp.status_code, "body": resp.text})
-    except Exception as e:
-        return ApiResponse.ok({"error": repr(e)})
-
 @router.get("/proxy/status")
 async def proxy_status():
-    return ApiResponse.ok(proxy_manager.status())
+    return ApiResponse.ok({"vn": proxy_manager.status(), "us": proxy_manager_us.status()})
 
 @router.post("/proxy/rotate")
 async def proxy_rotate():
     proxy_manager.rotate()
+    proxy_manager_us.rotate()
     return ApiResponse.ok({"rotated": True})
 
 @router.get("/proxy/test")
-async def test_proxy():
-    proxy_url = await proxy_manager.get_proxy()
+async def test_proxy(pool: str = "vn"):
+    mgr = proxy_manager_us if pool == "us" else proxy_manager
+    proxy_url = await mgr.get_proxy()
     if not proxy_url:
-        return ApiResponse.ok({"status": "error", "detail": "Could not get proxy — check PROXY_KEYS in .env"})
+        return ApiResponse.ok({"status": "error", "detail": f"No proxy in '{pool}' pool"})
     try:
         async with httpx.AsyncClient(proxy=proxy_url, timeout=10) as client:
             resp = await client.get("http://httpbin.org/ip")
             ip = resp.json().get("origin", "unknown")
-        return ApiResponse.ok({"status": "ok", "exit_ip": ip, "proxy": proxy_url})
+        return ApiResponse.ok({"status": "ok", "pool": pool, "exit_ip": ip})
     except Exception as e:
-        return ApiResponse.ok({"status": "error", "proxy": proxy_url, "error": repr(e)})
+        return ApiResponse.ok({"status": "error", "pool": pool, "error": repr(e)})
 
 @router.get("/jobs")
 async def list_jobs():

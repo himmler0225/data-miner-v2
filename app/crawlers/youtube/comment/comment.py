@@ -257,3 +257,51 @@ async def get_video_comments(
                     comments[idx]["replies"] = result
 
     return comments[:max_comments]
+
+
+async def get_video_comments_batch(
+    video_ids: List[str],
+    proxy: str = None,
+    max_per_video: int = 20,
+    sort: Literal["top", "newest"] = "top",
+    concurrency: int = 3,
+) -> Dict:
+    """
+    Fetch comments for several videos in parallel (bounded by `concurrency`).
+    Videos with disabled/zero comments are skipped — returns whatever has comments.
+    Pairs with picking the top N videos by view so the agent never gets stuck
+    on a single comment-disabled video.
+    """
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(vid: str):
+        async with sem:
+            try:
+                comments = await get_video_comments(vid, proxy=proxy, max_comments=max_per_video, sort=sort)
+                return vid, comments, None
+            except Exception as e:
+                return vid, [], str(e)
+
+    results = await asyncio.gather(*[_one(v) for v in video_ids])
+
+    per_video = []
+    skipped   = []
+    for vid, comments, err in results:
+        if err:
+            skipped.append({"video_id": vid, "reason": "error", "detail": err})
+        elif not comments:
+            skipped.append({"video_id": vid, "reason": "disabled_or_empty"})
+        else:
+            per_video.append({"video_id": vid, "total": len(comments), "comments": comments})
+
+    total = sum(v["total"] for v in per_video)
+    logger.info("[comments/batch] %d ids → %d with comments, %d skipped, %d total comments",
+                len(video_ids), len(per_video), len(skipped), total)
+    return {
+        "requested":            len(video_ids),
+        "videos_with_comments": len(per_video),
+        "videos_skipped":       len(skipped),
+        "total_comments":       total,
+        "results":              per_video,
+        "skipped":              skipped,
+    }

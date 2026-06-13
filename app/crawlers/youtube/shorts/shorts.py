@@ -259,10 +259,10 @@ async def get_shorts_feed(proxy: str = None, max_results: int = 20) -> List[Dict
     headers = get_youtube_headers()
 
     async with create_httpx_client(proxy=proxy, headers=headers) as client:
-        await _bootstrap_session(client)
         shorts: List[Dict] = []
         seen_ids: set = set()
 
+        # Search-based shorts need no session cookies — try them first.
         for q in ("#shorts", "shorts funny", "shorts viral", "shorts trending 2024"):
             if len(shorts) >= max_results:
                 break
@@ -272,6 +272,8 @@ async def get_shorts_feed(proxy: str = None, max_results: int = 20) -> List[Dict
 
         if len(shorts) < max_results:
             logger.info("[shorts] search insufficient, switching to reel_item_watch")
+            # Reel endpoint needs a warmed session — bootstrap only now.
+            await _bootstrap_session(client)
             reel_url = get_youtube_api_url(_REEL_ENDPOINT, api_key) + "&prettyPrint=false"
             consecutive_empty = 0
             for restart in range(8):

@@ -42,17 +42,29 @@ async def lifespan(app: FastAPI):
     connect_background()
     logger.info("NestJS WebSocket connection initialized")
 
-    # Pre-warm TikTok msToken so first search is fast
+    # Warm the TikTok session pool (shared ttwid jars) + hourly refresher.
+    pool_task = None
     try:
-        from app.crawlers.tiktok.native import warm_token
-        asyncio.create_task(warm_token())
-        logger.info("TikTok token warm-up started in background")
+        from app.crawlers.tiktok.native import warm_session_pool, session_pool_refresher
+        await warm_session_pool()
+        pool_task = asyncio.create_task(session_pool_refresher())
+        logger.info("TikTok session pool ready + refresher started")
     except Exception as e:
-        logger.warning("TikTok token warm-up failed to start: %s", e)
+        logger.warning("TikTok session pool failed to start: %s", e)
+
+    # Pre-warm YouTube visitorData (key is already seeded as a constant)
+    try:
+        from app.utils import warm_youtube_session
+        asyncio.create_task(warm_youtube_session())
+        logger.info("YouTube session warm-up started in background")
+    except Exception as e:
+        logger.warning("YouTube session warm-up failed to start: %s", e)
 
     yield
 
     logger.info("Data Miner API shutting down...")
+    if pool_task:
+        pool_task.cancel()
     await disconnect_from_nestjs()
     logger.info("NestJS WebSocket disconnected")
 

@@ -1,5 +1,12 @@
 from typing import Dict, List, Optional
 
+def join_runs(node: dict) -> str:
+    """Concatenate all `runs[].text` — YouTube splits text at styled/bolded spans."""
+    runs = node.get("runs") if isinstance(node, dict) else None
+    if runs:
+        return "".join(r.get("text", "") for r in runs)
+    return node.get("simpleText", "") if isinstance(node, dict) else ""
+
 def get_channel_id_from_owner(video: dict) -> Optional[str]:
     owner_runs = video.get("ownerText", {}).get("runs", [{}])
     return (
@@ -31,7 +38,6 @@ def get_continuation_items(data: dict) -> List[dict]:
 
 def parse_video_renderer(video: dict) -> Dict:
     from ....utils import parse_view_count
-    owner_runs = video.get("ownerText", {}).get("runs", [{}])
     views_raw = (
         video.get("viewCountText", {}).get("simpleText", "")
         or video.get("shortViewCountText", {}).get("simpleText", "")
@@ -39,8 +45,8 @@ def parse_video_renderer(video: dict) -> Dict:
     video_id = video.get("videoId")
     return {
         "video_id": video_id,
-        "title": video.get("title", {}).get("runs", [{}])[0].get("text", ""),
-        "channel": owner_runs[0].get("text", ""),
+        "title": join_runs(video.get("title", {})),
+        "channel": join_runs(video.get("ownerText", {})),
         "channel_id": get_channel_id_from_owner(video),
         "view_count": parse_view_count(views_raw),
         "duration": video.get("lengthText", {}).get("simpleText", ""),

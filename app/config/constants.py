@@ -25,4 +25,7 @@ CLIENT_VERSION = "2.20260603.05.00"
 CLIENT_HL      = "vi"
 CLIENT_GL      = "VN"
 
+# Public InnerTube WEB client key — static for years, same for everyone.
+INNERTUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+
 DEFAULT_TIMEOUT = 15

@@ -5,14 +5,15 @@ from app.crawlers.youtube.detail import get_video_detail
 from app.crawlers.youtube.channel import get_channel_videos
 from app.crawlers.youtube.channel_info import get_channel_info
 from app.crawlers.youtube.playlist import get_playlist_videos, get_videos_from_playlist
-from app.crawlers.youtube.comment import get_video_comments
+from app.crawlers.youtube.comment import get_video_comments, get_video_comments_batch
 from app.crawlers.youtube.live import get_all_live_videos
 from app.crawlers.youtube.shorts import get_shorts_feed
 from app.crawlers.youtube.location import get_videos_by_region
 from app.utils import resolve_channel_id_from_handle, retry_on_failure
 from app.middleware import verify_api_key, limiter
 from app.config.logger import Logger
-from app.config.urls import proxy_manager
+from app.config.urls import proxy_manager, proxy_manager_us
+from app.config.settings import PROXY_US
 from app.schemas.response import ApiResponse
 
 from dotenv import load_dotenv
@@ -135,7 +136,9 @@ async def get_videos_location(
     max_results: int = Query(50, ge=1, le=100),
 ):
     try:
-        proxy = await proxy_manager.get_proxy()
+        # US-geo queries go through the US proxy; everything else via VN.
+        mgr = proxy_manager_us if gl.upper() == "US" and PROXY_US else proxy_manager
+        proxy = await mgr.get_proxy()
         videos = await get_videos_by_region(gl=gl, hl=hl, query=query, proxy=proxy, max_results=max_results)
         return ApiResponse.ok({"gl": gl, "query": query, "total": len(videos), "videos": videos})
     except Exception as e:
@@ -168,6 +171,23 @@ async def get_comments(
         return {"video_id": video_id, "total": len(comments), "comments": comments[start:]}
     try:
         return ApiResponse.ok(await _())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/videos/comments/batch", summary="Comments for multiple videos (parallel)")
+async def get_comments_batch(
+    video_ids: str = Query(..., description="Comma-separated video_ids (pick top N by view)"),
+    limit: int = Query(20, ge=1, le=100),
+    sort: str = Query("top", enum=["top", "newest"]),
+):
+    ids = [v.strip() for v in video_ids.split(",") if v.strip()][:8]
+    if not ids:
+        raise HTTPException(status_code=400, detail="video_ids is empty")
+    try:
+        proxy = await proxy_manager.get_proxy()
+        result = await get_video_comments_batch(ids, proxy=proxy, max_per_video=limit, sort=sort)
+        return ApiResponse.ok(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

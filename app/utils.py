@@ -5,19 +5,21 @@ import random
 import asyncio
 from fastapi import HTTPException
 import httpx
-import json
 from typing import Optional
-from .config.urls import YOUTUBE_BASE_URL, get_proxy, proxy_manager
+from .config.urls import YOUTUBE_BASE_URL, proxy_manager
 from .config.constants import (
-    CLIENT_NAME, CLIENT_VERSION, CLIENT_HL, CLIENT_GL, DEFAULT_TIMEOUT
+    CLIENT_NAME, CLIENT_VERSION, CLIENT_HL, CLIENT_GL, DEFAULT_TIMEOUT,
+    INNERTUBE_API_KEY,
 )
 from app.config.logger import Logger
 from app.exceptions import YouTubeStructureChangedError
 
-_KEY_TTL = 3600
+_KEY_TTL = 86400  # 24h — InnerTube key is effectively static
 
 logger = Logger.get(__name__)
-_api_key_cache: dict = {"value": "", "expires": 0.0}
+# Seed with the public web key so searches never block on a homepage fetch.
+_api_key_cache: dict = {"value": INNERTUBE_API_KEY, "expires": float("inf")}
+_key_lock = asyncio.Lock()
 
 # Keyed by proxy URL (or "" for direct). Reusing clients avoids TCP handshake
 # overhead on every crawler call (~50–200ms saved per request).
@@ -37,33 +39,57 @@ def _get_pooled_client(proxy: Optional[str], headers: Optional[dict], timeout: i
 _visitor_data_cache: dict = {"value": "", "expires": 0.0}
 _client_version_cache: dict = {"value": "", "expires": 0.0}
 
-async def get_youtube_api_key(proxy: str = None) -> str:
+async def get_youtube_api_key(proxy: str = None, force: bool = False) -> str:
+    """
+    Return the InnerTube key instantly from cache (seeded with the public web key).
+    Pass force=True after a 403 to re-scrape a fresh key from the homepage.
+    """
     now = time.monotonic()
-    if _api_key_cache["value"] and now < _api_key_cache["expires"]:
+    if not force and _api_key_cache["value"] and now < _api_key_cache["expires"]:
         return _api_key_cache["value"]
 
-    async with create_httpx_client(proxy=proxy) as client:
-        resp = await client.get(YOUTUBE_BASE_URL)
-        html = resp.text
+    async with _key_lock:
+        now = time.monotonic()
+        if not force and _api_key_cache["value"] and now < _api_key_cache["expires"]:
+            return _api_key_cache["value"]
+        await _scrape_homepage(proxy)
+        return _api_key_cache["value"]
+
+
+async def _scrape_homepage(proxy: str = None) -> None:
+    """Scrape key + visitorData + client_version from the YouTube homepage."""
+    now = time.monotonic()
+    try:
+        async with create_httpx_client(proxy=proxy) as client:
+            resp = await client.get(YOUTUBE_BASE_URL)
+            html = resp.text
 
         match = re.search(r'"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"', html)
-        if not match:
-            raise Exception("INNERTUBE_API_KEY not found in YouTube homepage")
-        key = match.group(1)
+        if match:
+            _api_key_cache["value"]   = match.group(1)
+            _api_key_cache["expires"] = now + _KEY_TTL
 
         vd_match = re.search(r'"visitorData"\s*:\s*"([^"]+)"', html)
         if vd_match:
-            _visitor_data_cache["value"] = vd_match.group(1)
+            _visitor_data_cache["value"]   = vd_match.group(1)
             _visitor_data_cache["expires"] = now + _KEY_TTL
 
         cv_match = re.search(r'"INNERTUBE_CLIENT_VERSION"\s*:\s*"([^"]+)"', html)
         if cv_match:
-            _client_version_cache["value"] = cv_match.group(1)
+            _client_version_cache["value"]   = cv_match.group(1)
             _client_version_cache["expires"] = now + _KEY_TTL
+    except Exception as e:
+        logger.warning("Homepage scrape failed (using fallback key): %s", e)
 
-        _api_key_cache["value"] = key
-        _api_key_cache["expires"] = now + _KEY_TTL
-        return key
+
+async def warm_youtube_session(proxy: str = None) -> None:
+    """Fire-and-forget: warm visitorData/client_version without blocking searches."""
+    if get_visitor_data():
+        return
+    async with _key_lock:
+        if get_visitor_data():
+            return
+        await _scrape_homepage(proxy)
 
 def get_visitor_data() -> Optional[str]:
     """Return cached visitorData if fresh, else None."""
@@ -118,10 +144,6 @@ def get_context(original_url: Optional[str] = None, user_agent: Optional[str] = 
         },
     }
 
-async def jitter_sleep(base: float, spread: float = 0.4) -> None:
-    """Sleep base ± spread*base seconds. Prevents fixed-interval fingerprinting."""
-    await asyncio.sleep(random.uniform(base * (1 - spread), base * (1 + spread)))
-
 async def resolve_channel_id_from_handle(handle: str) -> str:
     async with create_httpx_client() as client:
         url = f"{YOUTUBE_BASE_URL}/@{handle}"
@@ -135,16 +157,7 @@ async def resolve_channel_id_from_handle(handle: str) -> str:
             return match.group(1)
         raise Exception("Channel_id not found")
 
-def save_to_json(data, filename="debug.json"):
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def get_default_proxy():
-    return get_proxy()
-
 def get_httpx_proxies(proxy: str = None):
-    if proxy is None:
-        proxy = get_proxy()
     return proxy or None
 
 class _PooledClientContext:

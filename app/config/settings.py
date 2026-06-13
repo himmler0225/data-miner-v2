@@ -13,7 +13,15 @@ LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
 API_KEYS: list[str] = [k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()]
 
-PROXY_LIST: list[str] = [p.strip() for p in (os.getenv("PROXY_LIST") or "").split(",") if p.strip()]
+def _proxy_list(env: str) -> list[str]:
+    return [p.strip() for p in (os.getenv(env) or "").split(",") if p.strip()]
+
+# VN residential (rotating, unmetered) — workhorse for all VN-focused crawling.
+PROXY_VN: list[str] = _proxy_list("PROXY_VN")
+# US residential (ZingProxy, ~1GB cap) — reserved for explicit US-geo requests only.
+PROXY_US: list[str] = _proxy_list("PROXY_US")
+# Back-compat: PROXY_LIST falls back to VN pool if the split vars aren't set.
+PROXY_LIST: list[str] = PROXY_VN or _proxy_list("PROXY_LIST")
 
 YOUTUBE_BASE_URL: str = os.getenv("YOUTUBE_BASE_URL", "https://www.youtube.com")
 YOUTUBE_API_BASE: str = os.getenv("YOUTUBE_API_BASE", "https://www.youtube.com/youtubei/v1")

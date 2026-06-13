@@ -106,21 +106,19 @@ def _parse_player_response(data: dict, video_id: str) -> dict:
     }
 
 async def get_video_detail(video_id: str, proxy: str = None) -> dict:
+    # Watch page is the reliable source — the player API returns UNPLAYABLE
+    # without a PoToken, so it's only a last-resort fallback.
     data = await _get_via_watch_page(video_id, proxy=proxy)
-    if data is None:
-        logger.info("[detail] watch_page failed, falling back to API for %s", video_id)
-        data = await _get_via_api(video_id, proxy=proxy)
-    if data is None:
-        logger.error("[detail] All methods failed for %s", video_id)
-        return {"error": True, "reason": "All methods failed", "status": "UNAVAILABLE"}
+    result = _parse_player_response(data, video_id) if data else {"error": True, "status": None}
 
-    result = _parse_player_response(data, video_id)
-    if result.get("error") and result.get("status") == "LOGIN_REQUIRED":
-        # LOGIN_REQUIRED on watch page → try API (different client context)
-        logger.info("[detail] LOGIN_REQUIRED via watch_page, retrying with API for %s", video_id)
+    if result.get("error"):
+        logger.info("[detail] watch_page status=%s, trying player API for %s",
+                    result.get("status"), video_id)
         api_data = await _get_via_api(video_id, proxy=proxy)
         if api_data:
             result = _parse_player_response(api_data, video_id)
 
-    logger.debug("[detail] %s → error=%s status=%s", video_id, result.get('error'), result.get('status'))
+    if result.get("error"):
+        logger.warning("[detail] both methods failed for %s (status=%s)", video_id, result.get("status"))
+
     return result

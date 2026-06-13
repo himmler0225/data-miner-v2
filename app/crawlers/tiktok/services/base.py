@@ -21,11 +21,13 @@ class TikTokBaseService:
     MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
     PC_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
 
-    def __init__(self, region: str = "VN", language: str = "vi", proxies: dict = None):
+    def __init__(self, region: str = "VN", language: str = "vi", proxies: dict = None,
+                 session: "requests.Session" = None):
         self.region = region
         self.language = language
         self.proxies = proxies
-        self.session = requests.Session()
+        # Reuse a pre-warmed session (with a trusted ttwid cookie) when provided.
+        self.session = session if session is not None else requests.Session()
         self._session_mstoken = None
         self._search_id = None
 

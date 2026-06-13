@@ -1,19 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from app.middleware import verify_api_key, limiter
-from app.crawlers.tiktok.native import search_native, trending_native, _format_sociavault_search
-from app.crawlers.tiktok.sociavault import (
-    search_keyword as sociavault_search,
-    get_video_info,
-    get_comments,
-    get_profile,
-)
+from app.crawlers.tiktok.native import search_native, trending_native
+from app.crawlers.tiktok.sociavault import get_video_info, get_comments, get_profile
 from app.config.logger import Logger
 from app.schemas.response import ApiResponse
+from app.crawlers.tiktok import cache as search_cache
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
 
-@router.get("/search", summary="TikTok Search (native → SociaVault fallback)")
+@router.get("/search", summary="TikTok Search (cache → native)")
 @limiter.limit("15/minute")
 async def tiktok_search(
     request: Request,
@@ -23,22 +19,24 @@ async def tiktok_search(
     cursor: int = Query(0, ge=0),
     region: str = Query("VN"),
     language: str = Query("vi"),
-    sort_by: str = Query(None, enum=["most-liked", "most-viewed", "most-recent", "most-relevant"]),
-    date_posted: str = Query(None, enum=["today", "this-week", "this-month", "this-year"]),
 ):
-    try:
-        result = await search_native(keyword=q, count=count, cursor=cursor, region=region, language=language)
-        if result.get("videos"):
-            return ApiResponse.ok(result)
-        logger.warning("[search] native returned empty — falling back to SociaVault")
-    except Exception as e:
-        logger.warning("[search] native failed (%s) — falling back to SociaVault", e)
+    cache_key = (q.lower().strip(), count, cursor, region)
+
+    # Cache — repeated keywords return instantly.
+    cached = search_cache.get(cache_key)
+    if cached is not None:
+        logger.info("[search] cache hit q=%r", q)
+        return ApiResponse.ok(cached)
 
     try:
-        raw = await sociavault_search(query=q, cursor=cursor, sort_by=sort_by, date_posted=date_posted)
-        return ApiResponse.ok(_format_sociavault_search(raw))
+        result = await search_native(keyword=q, count=count, cursor=cursor, region=region, language=language)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning("[search] native failed: %s", e)
+        result = {"success": False, "count": 0, "videos": []}
+
+    if result.get("videos"):
+        search_cache.put(cache_key, result)
+    return ApiResponse.ok(result)
 
 @router.get("/trending", summary="TikTok Trending (native)")
 @limiter.limit("15/minute")

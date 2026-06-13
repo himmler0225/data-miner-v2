@@ -4,7 +4,7 @@ from ....utils import get_context, get_youtube_api_key, create_httpx_client, par
 from ....config import get_youtube_headers, get_youtube_api_url
 from ....config.constants import ENDPOINT_SEARCH, SEARCH_FILTER_LIVE
 from ....exceptions import YouTubeStructureChangedError
-from ..shared import extract_continuation_token, get_continuation_items
+from ..shared import extract_continuation_token, get_continuation_items, join_runs
 
 def extract_live_videos(items: List[Dict]) -> List[Dict]:
     videos = []
@@ -12,15 +12,12 @@ def extract_live_videos(items: List[Dict]) -> List[Dict]:
         video = item.get("videoRenderer")
         if not video:
             continue
-        views_raw = ""
-        if "shortViewCountText" in video:
-            views_raw = video["shortViewCountText"].get("simpleText") or \
-                video["shortViewCountText"].get("runs", [{}])[0].get("text", "")
+        views_raw = join_runs(video.get("shortViewCountText", {})) if "shortViewCountText" in video else ""
         videos.append({
             "video_id": video.get("videoId"),
-            "title": video.get("title", {}).get("runs", [])[0].get("text", ""),
+            "title": join_runs(video.get("title", {})),
             "thumbnail": video.get("thumbnail", {}).get("thumbnails", []),
-            "channel_name": video.get("ownerText", {}).get("runs", [{}])[0].get("text", ""),
+            "channel_name": join_runs(video.get("ownerText", {})),
             "url": f"https://www.youtube.com/watch?v={video.get('videoId')}",
             "view_count": parse_view_count(views_raw),
             "is_live": True,

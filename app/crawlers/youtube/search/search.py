@@ -17,14 +17,15 @@ def extract_video_items(items: List[Dict]) -> List[Dict]:
         if not video or not video.get("videoId"):
             continue
         parsed = parse_video_renderer(video)
-        parsed["description_snippet"] = (
+        runs = (
             video.get("detailedMetadataSnippets", [{}])[0]
-            .get("snippetText", {}).get("runs", [{}])[0].get("text", "")
+            .get("snippetText", {}).get("runs", [])
         )
+        parsed["description_snippet"] = "".join(r.get("text", "") for r in runs)
         results.append(parsed)
     return results
 
-async def search_youtube(query: str, max_results: int = 50, proxy: str = None, sort: str = "relevance") -> List[Dict]:
+async def search_youtube(query: str, max_results: int = 20, proxy: str = None, sort: str = "relevance") -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     search_url = get_youtube_api_url(ENDPOINT_SEARCH, api_key)
     headers = get_youtube_headers()
@@ -61,8 +62,10 @@ async def search_youtube(query: str, max_results: int = 50, proxy: str = None, s
             if "continuationItemRenderer" in section:
                 continuation = extract_continuation_token(section)
 
+        ctx = get_context()
         while continuation and len(collected) < max_results:
-            payload = {"context": get_context(), "continuation": continuation}
+            token, continuation = continuation, None
+            payload = {"context": ctx, "continuation": token}
             resp = await client.post(search_url, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -72,4 +75,5 @@ async def search_youtube(query: str, max_results: int = 50, proxy: str = None, s
                 if "continuationItemRenderer" in section:
                     continuation = extract_continuation_token(section)
 
-    return collected[:max_results]
+    deduped = list({v["video_id"]: v for v in collected if v.get("video_id")}.values())
+    return deduped[:max_results]

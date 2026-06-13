@@ -275,7 +275,8 @@ async def _search_trending(proxy, max_results, gl, hl) -> List[Dict]:
                 return collected[:max_results]
 
         while continuation and len(collected) < max_results:
-            cont_payload = {"context": context, "continuation": continuation}
+            token, continuation = continuation, None
+            cont_payload = {"context": context, "continuation": token}
             resp = await client.post(search_url, json=cont_payload)
             resp.raise_for_status()
             cont_data = resp.json()

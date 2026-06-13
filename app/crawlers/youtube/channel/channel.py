@@ -5,6 +5,7 @@ from ....utils import get_youtube_api_key, get_context, create_httpx_client
 from ....config import get_youtube_headers, get_youtube_api_url
 from ....config.constants import ENDPOINT_BROWSE, CHANNEL_TAB_VIDEOS
 from ....exceptions import YouTubeStructureChangedError
+from ..shared import join_runs
 
 def extract_video_items(items: List[Dict]) -> List[Dict]:
     videos = []
@@ -14,7 +15,7 @@ def extract_video_items(items: List[Dict]) -> List[Dict]:
         if not video:
             continue
         videos.append({
-            "title": video.get("title", {}).get("runs", [{}])[0].get("text", ""),
+            "title": join_runs(video.get("title", {})),
             "videoId": video.get("videoId"),
             "url": f"https://www.youtube.com/watch?v={video.get('videoId')}",
             "duration": video.get("lengthText", {}).get("simpleText", ""),

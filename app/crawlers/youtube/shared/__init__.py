@@ -3,6 +3,7 @@ from .parsers import (
     extract_continuation_token,
     get_continuation_items,
     get_channel_id_from_owner,
+    join_runs,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "extract_continuation_token",
     "get_continuation_items",
     "get_channel_id_from_owner",
+    "join_runs",
 ]
