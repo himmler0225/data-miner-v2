@@ -111,3 +111,20 @@ async def tiktok_profile(
         return ApiResponse.ok(await tikhub.get_profile(unique_id=handle))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/transcript", summary="TikTok Video Transcript (TikHub)")
+@limiter.limit("15/minute")
+async def tiktok_transcript(
+    request: Request,
+    response: Response,
+    aweme_id: str = Query(..., description="TikTok video ID"),
+):
+    try:
+        raw = await tikhub.get_transcript(aweme_id=aweme_id)
+        fmt = tikhub.format_transcript(raw)
+        if fmt is None:
+            return ApiResponse.ok({"aweme_id": aweme_id, "available": False, "text": None})
+        return ApiResponse.ok(fmt)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

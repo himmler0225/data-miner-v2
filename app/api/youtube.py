@@ -6,6 +6,7 @@ from app.crawlers.youtube.channel import get_channel_videos
 from app.crawlers.youtube.channel_info import get_channel_info
 from app.crawlers.youtube.playlist import get_playlist_videos, get_videos_from_playlist
 from app.crawlers.youtube.comment import get_video_comments, get_video_comments_batch
+from app.crawlers.youtube.transcript import get_transcript, get_transcript_batch
 from app.crawlers.youtube.live import get_all_live_videos
 from app.crawlers.youtube.shorts import get_shorts_feed
 from app.crawlers.youtube.location import get_videos_by_region
@@ -242,5 +243,34 @@ async def playlist_videos(playlist_id: str):
         return {"playlist_id": playlist_id, "total": len(videos), "videos": videos}
     try:
         return ApiResponse.ok(await _())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/videos/{video_id}/transcript", summary="Video Transcript")
+async def video_transcript(video_id: str):
+    try:
+        result = await get_transcript(video_id)
+        if result is None:
+            return ApiResponse.ok({"video_id": video_id, "available": False, "text": None})
+        return ApiResponse.ok({**result, "available": True})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/videos/transcript/batch", summary="Transcripts for multiple videos")
+async def transcript_batch(
+    video_ids: str = Query(..., description="Comma-separated video_ids (max 8)"),
+):
+    ids = [v.strip() for v in video_ids.split(",") if v.strip()][:8]
+    if not ids:
+        raise HTTPException(status_code=400, detail="video_ids is empty")
+    try:
+        results = await get_transcript_batch(ids)
+        return ApiResponse.ok({
+            "requested": len(ids),
+            "available": sum(1 for v in results.values() if v),
+            "results":   results,
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -116,6 +116,43 @@ async def get_profile(unique_id: str) -> Dict:
     return r.json()
 
 
+# ── Transcript ────────────────────────────────────────────────────────────────
+
+async def get_transcript(aweme_id: str) -> Dict:
+    r = await _client().get(
+        "/api/v1/tiktok/app/v3/fetch_video_caption",
+        params={"aweme_id": aweme_id},
+    )
+    r.raise_for_status()
+    logger.info("🟡 [tikhub] transcript aweme_id=%s", aweme_id)
+    return r.json()
+
+
+def format_transcript(raw: Dict) -> Optional[Dict]:
+    """Extract subtitle text from TikHub caption response."""
+    data     = raw.get("data") or {}
+    captions = data.get("caption_info_list") or []
+    if not captions:
+        return None
+    # Prefer Vietnamese, fallback to English, then first available
+    for lang in ("vie", "eng"):
+        cap = next((c for c in captions if c.get("language_code") == lang), None)
+        if cap:
+            break
+    else:
+        cap = captions[0]
+
+    text = cap.get("caption_text") or ""
+    vid = data.get("aweme_id", "")
+    return {
+        "aweme_id":     vid,
+        "language":     cap.get("language_code", ""),
+        "text":         text,
+        "char_count":   len(text),
+        "available":    bool(text),
+    }
+
+
 # ── Internal formatter ────────────────────────────────────────────────────────
 
 def _fmt_video(v: Dict) -> Dict:
