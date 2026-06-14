@@ -24,7 +24,7 @@ class ProxyManager:
                 len(self._proxies), ttl, ", ".join(hosts),
             )
         else:
-            logger.warning("ProxyManager: no proxy configured — requests go direct")
+            logger.warning("⚠️  ProxyManager: no proxy configured — requests go direct")
 
     async def get_proxy(self) -> Optional[str]:
         if not self._proxies:
@@ -35,14 +35,14 @@ class ProxyManager:
             self._current    = random.choice(self._proxies)
             self._expires_at = now + self._ttl
             host = self._current.split("@")[-1]
-            logger.info("ProxyManager: pinned to %s for next %ds", host, self._ttl)
+            logger.info("🔵 ProxyManager: pinned to %s for next %ds", host, self._ttl)
 
         return self._current
 
     def rotate(self) -> None:
         """Force immediate rotation on next request — call when a proxy fails."""
         self._expires_at = 0.0
-        logger.info("ProxyManager: forced rotation scheduled")
+        logger.info("🔵 ProxyManager: forced rotation scheduled")
 
     def status(self) -> dict:
         remaining = max(0, self._expires_at - time.monotonic())

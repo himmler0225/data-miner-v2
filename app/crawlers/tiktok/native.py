@@ -14,12 +14,13 @@ _TIKTOK_DIR = os.path.dirname(__file__)
 if _TIKTOK_DIR not in sys.path:
     sys.path.insert(0, _TIKTOK_DIR)
 
-_NATIVE_TIMEOUT = 25.0  # hard cap so a stuck request falls back to SociaVault
+_NATIVE_TIMEOUT = 25.0  # hard cap — exceeded → TikHub fallback kicks in
 
 async def _proxy_dict() -> Optional[Dict]:
-    """Sticky proxy (same exit IP for ~15 min)."""
-    from app.config.urls import proxy_manager
-    url = await proxy_manager.get_proxy()
+    """TikTok WAF blocks VN proxy on homepage → use US proxy for session warm+search."""
+    from app.config.urls import proxy_manager_us, proxy_manager
+    mgr = proxy_manager_us if proxy_manager_us._proxies else proxy_manager
+    url = await mgr.get_proxy()
     return {"http": url, "https": url} if url else None
 
 
@@ -28,12 +29,16 @@ async def _proxy_dict() -> Optional[Dict]:
 # must be minted AND used together. Each identity binds a warmed session (ttwid),
 # the proxy it was warmed through, and an msToken refreshed on that same session.
 
+_MSTOKEN_TTL = 50.0  # reuse within same session; TikTok expires at ~55s
+
 @dataclasses.dataclass
 class TikTokIdentity:
-    session: object                      # requests.Session (carries ttwid)
-    proxy:   Optional[Dict]              # the proxy ttwid was minted through
-    ua:      str                         # UA used for warm + must match search
-    lock:    threading.Lock = dataclasses.field(default_factory=threading.Lock)
+    session:         object                # requests.Session (carries ttwid)
+    proxy:           Optional[Dict]        # proxy used for warm + search
+    ua:              str                   # UA consistent across warm + search
+    mstoken:         Optional[str] = None  # last-minted msToken for THIS session
+    mstoken_ts:      float = 0.0           # time.monotonic() when it was minted
+    lock:            threading.Lock = dataclasses.field(default_factory=threading.Lock)
 
 _POOL_SIZE  = 3
 _pool: List[TikTokIdentity] = []
@@ -49,23 +54,29 @@ def _warm_one_identity(proxy: Optional[Dict]) -> Optional[TikTokIdentity]:
     s = requests.Session()
     if proxy:
         s.proxies.update(proxy)
-    ua = TikTokBaseService.MOBILE_UA
+    # Use the same macOS Chrome UA that search will use — cookies bind to UA.
+    ua = TikTokBaseService.MAC_SEARCH_UA
     headers = {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "vi-VN,vi;q=0.9",
+        "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
+        "sec-ch-ua": '"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
     }
     try:
         s.get(TikTokBaseService.BASE_URL, headers=headers, timeout=10, allow_redirects=True)
         s.get(f"{TikTokBaseService.BASE_URL}/explore", headers=headers, timeout=10, allow_redirects=True)
     except Exception as e:
-        logger.warning("[native/pool] warm failed: %s", e)
+        logger.warning("🔴 [pool] warm failed: %s", e)
         return None
     if not any(c.name == "ttwid" for c in s.cookies):
-        logger.warning("[native/pool] session warmed without ttwid — discarding")
+        logger.warning("🔴 [pool] session warmed without ttwid — discarding")
         return None
+    cookies = {c.name for c in s.cookies}
+    logger.info("🔵 [pool] identity ready cookies=%s", sorted(cookies))
     return TikTokIdentity(session=s, proxy=proxy, ua=ua)
 
 
@@ -80,7 +91,7 @@ async def warm_session_pool(size: int = _POOL_SIZE) -> int:
     with _pool_lock:
         _pool = good
         _pool_cycle = itertools.cycle(good) if good else None
-    logger.info("[native/pool] warmed %d/%d identities", len(good), size)
+    logger.info("🔵 [pool] warmed %d/%d identities", len(good), size)
     return len(good)
 
 
@@ -100,7 +111,7 @@ async def session_pool_refresher(interval: float = 600.0) -> None:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logger.warning("[native/pool] refresh error: %s", e)
+            logger.warning("🔴 [pool] refresh error: %s", e)
 
 def _extract_video(item: Dict) -> Dict:
     video  = item.get("item", item)
@@ -140,22 +151,47 @@ def _extract_video(item: Dict) -> Dict:
 
 
 def _search_with_identity(ident: TikTokIdentity, keyword, count, cursor, region, language) -> Dict:
-    """Runs in a thread. Reuses the identity's trusted session (ttwid) + proxy + UA,
-    but lets SearchService mint msToken itself — the trusted session mints a valid
-    token fast. Do NOT manage msToken manually (the homepage cookie isn't the token
-    the search API needs). requests.Session isn't thread-safe → hold the lock."""
+    """Runs in a thread. US proxy session already has ttwid — go straight to the
+    search API without visiting the search page first (confirmed unnecessary).
+    requests.Session isn't thread-safe → hold the lock."""
     from services import SearchService
     with ident.lock:
         service = SearchService(region=region, language=language,
                                 proxies=ident.proxy, session=ident.session)
-        return service.search(keyword=keyword, count=count, cursor=cursor, use_fresh_token=True)
+
+        # Reuse the msToken from the previous search on this same session if still fresh.
+        # msToken is session-bound (can't share across sessions), but IS reusable within
+        # the same session for ~55s — avoids a full homepage GET per search call (~3s).
+        now = _time.monotonic()
+        if ident.mstoken and (now - ident.mstoken_ts) < _MSTOKEN_TTL:
+            token = ident.mstoken
+            service.get_fresh_mstoken = lambda: token
+        else:
+            ident.mstoken    = None  # force fresh mint
+            ident.mstoken_ts = 0.0
+
+        # Patch out the 1.5s artificial pre-request sleep.
+        original = service._make_request
+        def _no_delay(endpoint, params, use_fresh_token=True, delay_before_request=1.5, **kw):  # noqa: ignored
+            return original(endpoint, params, use_fresh_token=use_fresh_token,
+                            delay_before_request=0, **kw)
+        service._make_request = _no_delay
+
+        result = service.search(keyword=keyword, count=count, cursor=cursor, use_fresh_token=True)
+
+        # Store the freshly minted token for next call.
+        if service._session_mstoken:
+            ident.mstoken    = service._session_mstoken
+            ident.mstoken_ts = _time.monotonic()
+
+        return result
 
 
 def _finalize(result: Dict, keyword: str, t0: float, tag: str) -> Dict:
     raw = result.pop("data", []) or []
     result["videos"] = [_extract_video(i) for i in raw]
     result["count"]  = len(result["videos"])
-    logger.info("[native/search] keyword=%r took=%.2fs count=%d success=%s via=%s",
+    logger.info("🟢 [native] keyword=%r took=%.2fs count=%d success=%s via=%s",
                 keyword, _time.perf_counter() - t0, result["count"], result.get("success"), tag)
     return result
 
@@ -187,7 +223,7 @@ async def search_native(
         ident.mstoken = None
         ident2 = _next_identity()
         if ident2 is not None and ident2 is not ident:
-            logger.info("[native/search] empty → rotating identity & retry")
+            logger.info("🟡 [native] empty → rotating identity & retry identity & retry")
             result = await asyncio.wait_for(
                 asyncio.to_thread(_search_with_identity, ident2, keyword, count, cursor, region, language),
                 timeout=_NATIVE_TIMEOUT,
@@ -211,5 +247,5 @@ async def trending_native(
     raw = result.pop("data", []) or []
     result["videos"] = [_extract_video(i) for i in raw]
     result["count"]  = len(result["videos"])
-    logger.info("[native/trending] region=%s success=%s count=%d", region, result.get("success"), result["count"])
+    logger.info("🟢 [trending] region=%s success=%s count=%d", region, result.get("success"), result["count"])
     return result

@@ -40,11 +40,11 @@ async def _get_via_watch_page(video_id: str, proxy: str = None) -> Optional[dict
     async with create_httpx_client(proxy=proxy, headers=headers, timeout=15) as client:
         resp = await client.get(YOUTUBE_WATCH_URL, params=params)
     if resp.status_code != 200:
-        logger.warning("[detail/watch_page] HTTP %s for %s", resp.status_code, video_id)
+        logger.warning("🔴 [detail] watch_page HTTP %s for %s", resp.status_code, video_id)
         return None
     data = _extract_player_response(resp.text)
     if not data:
-        logger.warning("[detail/watch_page] ytInitialPlayerResponse not found for %s", video_id)
+        logger.warning("🔴 [detail] watch_page: ytInitialPlayerResponse not found for %s", video_id)
         return None
     return data
 
@@ -52,7 +52,7 @@ async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
     try:
         api_key = await get_youtube_api_key(proxy=proxy)
     except Exception as e:
-        logger.warning("[detail/api] Failed to get API key: %s", e)
+        logger.warning("🔴 [detail] API key failed: %s", e)
         return None
     url = get_youtube_api_url(ENDPOINT_PLAYER, api_key)
     headers = get_youtube_headers()
@@ -65,7 +65,7 @@ async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
     async with create_httpx_client(proxy=proxy, headers=headers, timeout=10) as client:
         resp = await client.post(url, json=payload)
     if resp.status_code != 200:
-        logger.warning("[detail/api] HTTP %s for %s", resp.status_code, video_id)
+        logger.warning("🔴 [detail] API HTTP %s for %s", resp.status_code, video_id)
         return None
     return resp.json()
 
@@ -112,13 +112,13 @@ async def get_video_detail(video_id: str, proxy: str = None) -> dict:
     result = _parse_player_response(data, video_id) if data else {"error": True, "status": None}
 
     if result.get("error"):
-        logger.info("[detail] watch_page status=%s, trying player API for %s",
+        logger.info("🟡 [detail] watch_page blocked, trying API%s, trying player API for %s",
                     result.get("status"), video_id)
         api_data = await _get_via_api(video_id, proxy=proxy)
         if api_data:
             result = _parse_player_response(api_data, video_id)
 
     if result.get("error"):
-        logger.warning("[detail] both methods failed for %s (status=%s)", video_id, result.get("status"))
+        logger.warning("🔴 [detail] both methods failed for %s (status=%s)", video_id, result.get("status"))
 
     return result

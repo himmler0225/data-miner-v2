@@ -82,7 +82,7 @@ async def get_top_choice(
 
     async with create_tiki_client(headers, cookies, proxy=proxy) as client:
         resp = await client.get(TOP_CHOICE_URL, params=params)
-        logger.info("GET %s -> %s", resp.url, resp.status_code)
+        logger.info("🟢 [tiki/top_choice] GET %s → %s", resp.url, resp.status_code)
         resp.raise_for_status()
         data = resp.json()
 

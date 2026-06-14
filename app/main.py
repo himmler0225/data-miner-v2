@@ -34,13 +34,13 @@ logger = Logger.get(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Data Miner API starting up...")
+    logger.info("🚀 Data Miner API starting up...")
     logger.info("Log level: %s", LOG_LEVEL)
     logger.info("IP whitelist: %s", ENABLE_IP_WHITELIST)
     logger.info("Rate limit: %s", RATE_LIMIT_DEFAULT)
     logger.info("Scheduler disabled — demo mode")
     connect_background()
-    logger.info("NestJS WebSocket connection initialized")
+    logger.info("🔌 NestJS WebSocket connection initialized")
 
     # Warm the TikTok session pool (shared ttwid jars) + hourly refresher.
     pool_task = None
@@ -48,15 +48,15 @@ async def lifespan(app: FastAPI):
         from app.crawlers.tiktok.native import warm_session_pool, session_pool_refresher
         await warm_session_pool()
         pool_task = asyncio.create_task(session_pool_refresher())
-        logger.info("TikTok session pool ready + refresher started")
+        logger.info("🟣 TikTok session pool ready + refresher started")
     except Exception as e:
-        logger.warning("TikTok session pool failed to start: %s", e)
+        logger.warning("🔴 TikTok session pool failed to start: %s", e)
 
     # Pre-warm YouTube visitorData (key is already seeded as a constant)
     try:
         from app.utils import warm_youtube_session
         asyncio.create_task(warm_youtube_session())
-        logger.info("YouTube session warm-up started in background")
+        logger.info("🟡 YouTube session warm-up started in background")
     except Exception as e:
         logger.warning("YouTube session warm-up failed to start: %s", e)
 

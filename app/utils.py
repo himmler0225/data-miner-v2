@@ -79,7 +79,7 @@ async def _scrape_homepage(proxy: str = None) -> None:
             _client_version_cache["value"]   = cv_match.group(1)
             _client_version_cache["expires"] = now + _KEY_TTL
     except Exception as e:
-        logger.warning("Homepage scrape failed (using fallback key): %s", e)
+        logger.warning("🔴 Homepage scrape failed (using fallback key): %s", e)
 
 
 async def warm_youtube_session(proxy: str = None) -> None:
@@ -253,7 +253,7 @@ def retry_on_failure(max_retries=3, delay=1):
                         )
                         await asyncio.sleep(wait_time)
                         continue
-                    logger.error("All %d retries exhausted for %s", max_retries, func.__name__, exc_info=True)
+                    logger.error("🔴 All %d retries exhausted for %s", max_retries, func.__name__, exc_info=True)
                     raise last_exception
         return wrapper
     return decorator

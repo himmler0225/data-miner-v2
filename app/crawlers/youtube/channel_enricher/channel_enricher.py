@@ -17,7 +17,7 @@ async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
             if data.get("channel_id"):
                 await ingest_client.ingest_channel(data)
         except Exception as e:
-            logger.warning("[enricher] info %s: %s", channel_id, e)
+            logger.warning("🔴 [enricher] info failed %s: %s", channel_id, e)
 
     async def _videos() -> None:
         try:
@@ -25,7 +25,7 @@ async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
             if videos:
                 await ingest_client.ingest_channel_videos(channel_id=channel_id, videos=videos)
         except Exception as e:
-            logger.warning("[enricher] videos %s: %s", channel_id, e)
+            logger.warning("🔴 [enricher] videos failed %s: %s", channel_id, e)
 
     async def _playlists() -> None:
         try:
@@ -51,11 +51,11 @@ async def _enrich_one(channel_id: str, proxy: Optional[str] = None) -> None:
             tasks = [_fetch_and_ingest(p["playlistId"]) for p in playlists if p.get("playlistId")]
             await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
-            logger.warning("[enricher] playlists %s: %s", channel_id, e)
+            logger.warning("🔴 [enricher] playlists failed %s: %s", channel_id, e)
 
-    logger.info("[enricher] start %s", channel_id)
+    logger.info("🟢 [enricher] start %s", channel_id)
     await asyncio.gather(_info(), _videos(), _playlists())
-    logger.info("[enricher] done  %s", channel_id)
+    logger.info("🟢 [enricher] done  %s", channel_id)
 
 async def enrich_channels_batch(
     channel_ids: Set[str],
@@ -71,4 +71,4 @@ async def enrich_channels_batch(
             await _enrich_one(cid, proxy=proxy)
 
     await asyncio.gather(*[_guarded(cid) for cid in channel_ids], return_exceptions=True)
-    logger.info("[enricher] batch complete — %s channels", len(channel_ids))
+    logger.info("🟢 [enricher] batch complete — %s channels", len(channel_ids))

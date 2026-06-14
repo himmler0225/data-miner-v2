@@ -51,4 +51,4 @@ LIVE_CRON:      str = os.getenv("LIVE_CRON",      "*/5 * * * *")
 LOCATION_CRON:  str = os.getenv("LOCATION_CRON",  "0 6 * * *")
 CLEANUP_CRON:   str = os.getenv("CLEANUP_CRON",   "0 2 * * 0")
 
-SOCIAVAULT_API_KEY: str = os.getenv("SOCIAVAULT_API_KEY", "")
+TIKAP_API_KEY: str = os.getenv("TIKAP_API_KEY", "")

@@ -1,5 +1,5 @@
 """Tiny in-memory TTL cache for TikTok search results.
-Shared across all requests → repeated keywords skip native + paid SociaVault."""
+Shared across all requests — cache hit skips both native and TikHub API calls."""
 import time
 import threading
 from typing import Any, Dict, Optional, Tuple

@@ -199,6 +199,46 @@ class TikTokBaseService:
             "tz_name": self._get_timezone_name(),
         }
 
+    def _get_mac_search_params(self) -> Dict[str, str]:
+        """Fingerprint matching the working browser curl: macOS Chrome, web_pc,
+        web_search_code included. No search_source/from_page."""
+        return {
+            "aid": "1988",
+            "app_name": "tiktok_web",
+            "channel": "tiktok_web",
+            "device_id": self._generate_device_id(),
+            "odinId": self._generate_odin_id(),
+            "device_platform": "web_pc",
+            "device_type": "web_h265",
+            "os": "mac",
+            "WebIdLastTime": self._get_webid_last_time(),
+            "region": self.region,
+            "priority_region": "",
+            "language": "en",
+            "app_language": "en",
+            "webcast_language": "en",
+            "browser_language": "en-US",
+            "browser_name": "Mozilla",
+            "browser_online": "true",
+            "browser_platform": "MacIntel",
+            "browser_version": "5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+            "cookie_enabled": "true",
+            "focus_state": "true",
+            "is_fullscreen": "true",
+            "is_page_visible": "true",
+            "screen_width": "1512",
+            "screen_height": "982",
+            "data_collection_enabled": "true",
+            "user_is_login": "false",
+            "history_len": "2",
+            "referer": "",
+            "tz_name": "Asia/Saigon",
+            "client_ab_versions": self._get_client_ab_versions(),
+            "web_search_code": self._get_web_search_code(),
+        }
+
+    MAC_SEARCH_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+
     def _sign_url(self, url: str, user_agent: str = None) -> Dict[str, str]:
         """Sign URL with X-Bogus and X-Gnarly"""
         if user_agent is None:

@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from app.middleware import verify_api_key, limiter
 from app.crawlers.tiktok.native import search_native, trending_native
-from app.crawlers.tiktok.sociavault import get_video_info, get_comments, get_profile
+from app.crawlers.tiktok import tikhub, cache as search_cache
 from app.config.logger import Logger
 from app.schemas.response import ApiResponse
-from app.crawlers.tiktok import cache as search_cache
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
 
-@router.get("/search", summary="TikTok Search (cache → native)")
+
+@router.get("/search", summary="TikTok Search (cache → native → TikHub)")
 @limiter.limit("15/minute")
 async def tiktok_search(
     request: Request,
@@ -19,24 +19,36 @@ async def tiktok_search(
     cursor: int = Query(0, ge=0),
     region: str = Query("VN"),
     language: str = Query("vi"),
+    sort_by: str = Query(None, enum=["most-liked", "most-viewed", "most-recent", "most-relevant"]),
 ):
-    cache_key = (q.lower().strip(), count, cursor, region)
+    cache_key = (q.lower().strip(), count, cursor, region, sort_by)
 
-    # Cache — repeated keywords return instantly.
     cached = search_cache.get(cache_key)
     if cached is not None:
-        logger.info("[search] cache hit q=%r", q)
+        logger.info("⚡ [search] cache hit q=%r", q)
         return ApiResponse.ok(cached)
 
+    # 1. Native (free, reverse-engineered)
     try:
         result = await search_native(keyword=q, count=count, cursor=cursor, region=region, language=language)
+        if result.get("videos"):
+            search_cache.put(cache_key, result)
+            return ApiResponse.ok(result)
+        logger.warning("🟡 [search] native empty → TikHub fallback")
     except Exception as e:
-        logger.warning("[search] native failed: %s", e)
-        result = {"success": False, "count": 0, "videos": []}
+        logger.warning("🔴 [search] native failed (%s) → TikHub fallback", e)
 
-    if result.get("videos"):
-        search_cache.put(cache_key, result)
-    return ApiResponse.ok(result)
+    # 2. TikHub fallback (paid, $0.001/call)
+    try:
+        sort_type = 1 if sort_by == "most-liked" else 0
+        raw = await tikhub.search_videos(keyword=q, cursor=cursor, count=count, sort_type=sort_type)
+        formatted = tikhub.format_search(raw)
+        if formatted.get("videos"):
+            search_cache.put(cache_key, formatted)
+        return ApiResponse.ok(formatted)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/trending", summary="TikTok Trending (native)")
 @limiter.limit("15/minute")
@@ -52,34 +64,43 @@ async def tiktok_trending(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/video-info", summary="TikTok Video Info (SociaVault)")
+
+@router.get("/video-info", summary="TikTok Video Info (TikHub)")
 @limiter.limit("15/minute")
 async def tiktok_video_info(
     request: Request,
     response: Response,
     url: str = Query(..., description="TikTok video URL"),
-    get_transcript: bool = Query(False),
-    region: str = Query(None),
 ):
     try:
-        return ApiResponse.ok(await get_video_info(url=url, get_transcript=get_transcript, region=region))
+        raw = await tikhub.get_video_info(url=url)
+        return ApiResponse.ok(raw)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/comments", summary="TikTok Comments (SociaVault)")
+
+@router.get("/comments", summary="TikTok Comments (TikHub)")
 @limiter.limit("15/minute")
 async def tiktok_comments(
     request: Request,
     response: Response,
-    url: str = Query(..., description="TikTok video URL"),
+    aweme_id: str = Query(..., description="TikTok video ID (aweme_id)"),
     cursor: int = Query(0, ge=0),
+    count: int = Query(20, ge=1, le=50),
 ):
     try:
-        return ApiResponse.ok(await get_comments(url=url, cursor=cursor))
+        raw = await tikhub.get_comments(aweme_id=aweme_id, cursor=cursor, count=count)
+        return ApiResponse.ok({
+            "aweme_id": aweme_id,
+            "comments": tikhub.format_comments(raw),
+            "has_more": (raw.get("data") or {}).get("has_more", False),
+            "cursor":   (raw.get("data") or {}).get("cursor", 0),
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/profiles/{handle}", summary="TikTok Profile (SociaVault)")
+
+@router.get("/profiles/{handle}", summary="TikTok Profile (TikHub)")
 @limiter.limit("15/minute")
 async def tiktok_profile(
     request: Request,
@@ -87,6 +108,6 @@ async def tiktok_profile(
     handle: str,
 ):
     try:
-        return ApiResponse.ok(await get_profile(handle=handle))
+        return ApiResponse.ok(await tikhub.get_profile(unique_id=handle))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

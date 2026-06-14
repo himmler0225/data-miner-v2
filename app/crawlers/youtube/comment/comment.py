@@ -179,7 +179,7 @@ async def get_video_comments(
             data = resp.json()
             continuation_token = extract_comment_continuation_token(data)
             if not continuation_token:
-                logger.warning("No comment continuation token for %s — comments may be disabled", video_id)
+                logger.warning("🟡 [comments] no continuation token for %s — comments may be disabled", video_id)
                 return []
 
         while continuation_token and len(comments) < max_comments:
@@ -247,7 +247,7 @@ async def get_video_comments(
         # Batch-fetch all replies in parallel instead of sequential awaits
         pending = [(i, c.pop("_reply_token")) for i, c in enumerate(comments) if "_reply_token" in c]
         if pending:
-            logger.debug("Fetching replies for %d comments in parallel", len(pending))
+            logger.debug("🟢 [comments] fetching replies for %d comments in parallel", len(pending))
             results = await asyncio.gather(
                 *[fetch_replies(client, tok, context, proxy=proxy) for _, tok in pending],
                 return_exceptions=True,
@@ -295,7 +295,7 @@ async def get_video_comments_batch(
             per_video.append({"video_id": vid, "total": len(comments), "comments": comments})
 
     total = sum(v["total"] for v in per_video)
-    logger.info("[comments/batch] %d ids → %d with comments, %d skipped, %d total comments",
+    logger.info("🟢 [comments/batch] %d ids → %d with comments, %d skipped, %d total comments",
                 len(video_ids), len(per_video), len(skipped), total)
     return {
         "requested":            len(video_ids),

@@ -312,7 +312,7 @@ async def get_trending_videos(
     skip_live: bool = True,
     skip_trending: bool = False,
 ) -> List[Dict]:
-    logger.info("Starting trending crawl gl=%s", gl)
+    logger.info("🟢 [trending] starting crawl gl=%s", gl)
     if skip_trending:
         return []
 
@@ -324,33 +324,33 @@ async def get_trending_videos(
             _safe(_html_trending(proxy, max_results, filter_params, gl, hl), "html"),
         )
         if api_err:
-            logger.warning("[trending] API failed: %s — %r", *api_err)
+            logger.warning("🔴 [trending] API failed: %s — %r", *api_err)
         if html_err:
-            logger.warning("[trending] HTML failed: %s — %r", *html_err)
+            logger.warning("🔴 [trending] HTML failed: %s — %r", *html_err)
 
         collected = api_result or html_result or []
         if api_result:
-            logger.info("[trending] API method: %d videos", len(api_result))
+            logger.info("🟢 [trending] API method: %d videos", len(api_result))
         elif html_result:
-            logger.info("[trending] HTML method: %d videos", len(html_result))
+            logger.info("🟢 [trending] HTML method: %d videos", len(html_result))
     else:
-        logger.info("[trending] no proxy — using HTML fallback")
+        logger.info("🟡 [trending] no proxy — using HTML fallback")
         collected, err = await _safe(_html_trending(proxy, max_results, filter_params, gl, hl), "html")
         if err:
-            logger.warning("[trending] HTML failed: %s — %r", *err)
+            logger.warning("🔴 [trending] HTML failed: %s — %r", *err)
         collected = collected or []
 
     if not collected:
-        logger.warning("[trending] all methods failed — falling back to view-count search")
+        logger.warning("🔴 [trending] all methods failed — falling back to view-count search")
         collected = await _search_trending(proxy, max_results, gl, hl)
-        logger.info("[trending] search fallback: %d videos", len(collected))
+        logger.info("🟡 [trending] search fallback: %d videos", len(collected))
 
     if skip_live:
         before = len(collected)
         collected = [v for v in collected if not _is_live_video(v)]
         filtered = before - len(collected)
         if filtered:
-            logger.info("[trending] filtered %d live videos", filtered)
+            logger.info("🟢 [trending] filtered %d live videos", filtered)
 
-    logger.info("[trending] done: %d videos", len(collected))
+    logger.info("🟢 [trending] done: %d videos", len(collected))
     return collected[:max_results]
