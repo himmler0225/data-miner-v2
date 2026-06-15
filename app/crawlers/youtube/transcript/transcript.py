@@ -18,6 +18,7 @@ def _fetch_sync(video_id: str) -> Optional[Dict]:
         from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
 
         api = YouTubeTranscriptApi()
+        print(api)
 
         # List available transcripts
         try:

@@ -1,7 +1,3 @@
-"""
-TikTok Base Service
-Shared utilities and configuration
-"""
 
 import time
 import random
@@ -15,7 +11,6 @@ from urllib.parse import urlencode, urlparse
 from lib.signatures import Signer, get_X_Gnarly
 
 class TikTokBaseService:
-    """Base service with shared functionality"""
 
     BASE_URL = "https://www.tiktok.com"
     MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
@@ -35,12 +30,10 @@ class TikTokBaseService:
             self.session.proxies.update(proxies)
 
     def _generate_fake_mstoken(self, length: int = 107) -> str:
-        """Generate fake msToken (fallback)"""
         chars = string.ascii_letters + string.digits + "_-"
         return ''.join(random.choice(chars) for _ in range(length))
 
     def _generate_device_id(self) -> str:
-        """Generate device_id (19-digit number starting with 7)"""
         if not hasattr(self, '_device_id'):
             first_digit = '7'
             rest_digits = ''.join(random.choice(string.digits) for _ in range(18))
@@ -48,7 +41,6 @@ class TikTokBaseService:
         return self._device_id
 
     def _generate_odin_id(self) -> str:
-        """Generate odinId (19-digit number starting with 7)"""
         if not hasattr(self, '_odin_id'):
             first_digit = '7'
             rest_digits = ''.join(random.choice(string.digits) for _ in range(18))
@@ -56,11 +48,9 @@ class TikTokBaseService:
         return self._odin_id
 
     def _get_webid_last_time(self) -> str:
-        """Get current unix timestamp for WebIdLastTime"""
         return str(int(time.time()))
 
     def _get_timezone_name(self) -> str:
-        """Get timezone name based on region"""
         tz_map = {
             "VN": "Asia/Ho_Chi_Minh",
             "US": "America/New_York",
@@ -75,11 +65,9 @@ class TikTokBaseService:
         return tz_map.get(self.region, "Etc/GMT-7")
 
     def _get_client_ab_versions(self) -> str:
-        """Get A/B test version string"""
         return "70508271,73720541,75294820,75638231,75650499,75694226,75747657,75843653,76034423,76036860,76040716,76053881,76054348,76055827,76065197,76088344,76135110,76145855,76146172,76184863,76187552,76212861,76217122,70405643,71057832,71200802,73004916,73171280,73208420,74276218,74844724,75330961"
 
     def _get_web_search_code(self) -> str:
-        """Get web_search_code JSON object"""
         search_code = {
             "tiktok": {
                 "client_params_x": {
@@ -94,7 +82,6 @@ class TikTokBaseService:
         return json.dumps(search_code, separators=(',', ':'))
 
     def get_fresh_mstoken(self) -> str:
-        """Get fresh msToken from TikTok homepage"""
         try:
             headers = {
                 "User-Agent": self.MOBILE_UA,
@@ -128,7 +115,6 @@ class TikTokBaseService:
             return self._generate_fake_mstoken()
 
     def _get_mobile_params(self) -> Dict[str, str]:
-        """Get base mobile device parameters with dynamic values"""
         return {
             "aid": "1988",
             "app_name": "tiktok_web",
@@ -165,7 +151,6 @@ class TikTokBaseService:
         }
 
     def _get_pc_params(self) -> Dict[str, str]:
-        """Get base PC device parameters (for comments)"""
         return {
             "aid": "1988",
             "app_name": "tiktok_web",
@@ -240,7 +225,6 @@ class TikTokBaseService:
     MAC_SEARCH_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
 
     def _sign_url(self, url: str, user_agent: str = None) -> Dict[str, str]:
-        """Sign URL with X-Bogus and X-Gnarly"""
         if user_agent is None:
             user_agent = self.MOBILE_UA
 
@@ -273,7 +257,6 @@ class TikTokBaseService:
         user_agent: str = None,
         proxies: Dict[str, str] = None
     ) -> Dict[str, Any]:
-        """Make API request"""
         if user_agent is None:
             user_agent = self.MOBILE_UA
 

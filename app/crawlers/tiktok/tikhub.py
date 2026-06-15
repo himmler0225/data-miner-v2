@@ -32,7 +32,6 @@ def _client() -> httpx.AsyncClient:
     return _http
 
 
-# ── Search ────────────────────────────────────────────────────────────────────
 
 async def search_videos(
     keyword: str,
@@ -63,7 +62,6 @@ def format_search(raw: Dict) -> Dict:
     }
 
 
-# ── Video info ────────────────────────────────────────────────────────────────
 
 async def get_video_info(url: str) -> Dict:
     r = await _client().get(
@@ -75,7 +73,6 @@ async def get_video_info(url: str) -> Dict:
     return r.json()
 
 
-# ── Comments ──────────────────────────────────────────────────────────────────
 
 async def get_comments(aweme_id: str, cursor: int = 0, count: int = 20) -> Dict:
     r = await _client().get(
@@ -104,7 +101,6 @@ def format_comments(raw: Dict) -> List[Dict]:
     ]
 
 
-# ── Profile ───────────────────────────────────────────────────────────────────
 
 async def get_profile(unique_id: str) -> Dict:
     r = await _client().get(
@@ -116,7 +112,6 @@ async def get_profile(unique_id: str) -> Dict:
     return r.json()
 
 
-# ── Transcript ────────────────────────────────────────────────────────────────
 
 async def get_transcript(aweme_id: str) -> Dict:
     r = await _client().get(
@@ -153,7 +148,6 @@ def format_transcript(raw: Dict) -> Optional[Dict]:
     }
 
 
-# ── Internal formatter ────────────────────────────────────────────────────────
 
 def _fmt_video(v: Dict) -> Dict:
     author = v.get("author") or {}

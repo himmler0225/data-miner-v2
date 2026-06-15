@@ -24,7 +24,6 @@ async def _proxy_dict() -> Optional[Dict]:
     return {"http": url, "https": url} if url else None
 
 
-# ── Identity pool ─────────────────────────────────────────────────────────────
 # TikTok validates (ttwid + msToken + IP + UA) as ONE consistent profile. They
 # must be minted AND used together. Each identity binds a warmed session (ttwid),
 # the proxy it was warmed through, and an msToken refreshed on that same session.

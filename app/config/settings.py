@@ -52,3 +52,7 @@ LOCATION_CRON:  str = os.getenv("LOCATION_CRON",  "0 6 * * *")
 CLEANUP_CRON:   str = os.getenv("CLEANUP_CRON",   "0 2 * * 0")
 
 TIKAP_API_KEY: str = os.getenv("TIKAP_API_KEY", "")
+
+# Supabase — remote config
+SUPABASE_URL:         str = os.getenv('SUPABASE_URL', '')
+SUPABASE_SERVICE_KEY: str = os.getenv('SUPABASE_SERVICE_KEY', '')

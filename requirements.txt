@@ -1,45 +1,15 @@
-# Core framework
-fastapi==0.115.12
-uvicorn==0.34.3
-
-# HTTP client
-# NOTE: httpx 0.28+ xóa tham số `proxies`, dùng `proxy` thay thế.
-# Hiện tại code dùng proxy= (đã cập nhật), nâng cấp lên 0.28 là an toàn.
-httpx==0.28.1
-
-# Pydantic v2
-pydantic==2.11.4
-pydantic-settings==2.9.0
-
-# Environment config
-python-dotenv==1.0.1
-
-# Server/async deps
-anyio==4.9.0
-sniffio==1.3.0
-h11==0.16.0
-httpcore==1.0.9
-
-# WebSocket & live reload
-websockets==14.2
-watchfiles==1.0.5
-
-# Socket.IO client (Python → NestJS WebSocket)
-python-socketio==5.12.1
-aiohttp==3.11.18
-
-# Scheduler
-APScheduler==3.11.0
-tzlocal==5.3
-
-# Rate Limiting & Security
-slowapi==0.1.9
-redis==5.3.0
-
-# Optional
-certifi==2025.4.26
-click==8.1.8
-colorama==0.4.6
-PyYAML==6.0.2
-
+fastapi[standard]>=0.115.12  # includes uvicorn, fastapi CLI, httpx, pydantic-settings
+python-dotenv>=1.1.0
+pydantic>=2.11.4
+anyio>=4.9.0
+websockets>=14.2
+watchfiles>=1.0.5
+python-socketio>=5.12.1
+aiohttp>=3.11.18
+APScheduler>=3.11.0
+tzlocal>=5.3
+slowapi>=0.1.9
+redis>=5.3.0
+certifi>=2025.4.26
+PyYAML>=6.0.2
 typing-extensions>=4.12.0

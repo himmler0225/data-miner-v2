@@ -34,6 +34,8 @@ logger = Logger.get(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.config.remote import load_and_apply
+    await load_and_apply()
     logger.info("🚀 Data Miner API starting up...")
     logger.info("Log level: %s", LOG_LEVEL)
     logger.info("IP whitelist: %s", ENABLE_IP_WHITELIST)
