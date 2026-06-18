@@ -157,10 +157,6 @@ def _search_with_identity(ident: TikTokIdentity, keyword, count, cursor, region,
     with ident.lock:
         service = SearchService(region=region, language=language,
                                 proxies=ident.proxy, session=ident.session)
-
-        # Reuse the msToken from the previous search on this same session if still fresh.
-        # msToken is session-bound (can't share across sessions), but IS reusable within
-        # the same session for ~55s — avoids a full homepage GET per search call (~3s).
         now = _time.monotonic()
         if ident.mstoken and (now - ident.mstoken_ts) < _MSTOKEN_TTL:
             token = ident.mstoken
@@ -217,7 +213,6 @@ async def search_native(
         timeout=_NATIVE_TIMEOUT,
     )
 
-    # Empty → this identity's token/IP profile is stale; rotate to another once.
     if not result.get("data"):
         ident.mstoken = None
         ident2 = _next_identity()

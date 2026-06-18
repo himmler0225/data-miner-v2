@@ -1,12 +1,7 @@
-"""
-TikHub API client (tikhub.io) — replaces SociaVault.
-Endpoints: /api/v1/tiktok/...
-Auth: Authorization: Bearer <TIKAP_API_KEY>
-"""
 from __future__ import annotations
-
 from typing import Any, Dict, List, Optional
 
+import urllib.parse
 import httpx
 
 from app.config.logger import Logger
@@ -37,16 +32,18 @@ async def search_videos(
     keyword: str,
     cursor: int = 0,
     count: int = 20,
-    sort_type: int = 0,  # 0=relevance, 1=most-liked
+    sort_type: int = 0,
 ) -> Dict:
+    query = urllib.parse.urlencode(
+        {"keyword": keyword, "cursor": cursor, "count": count, "sort_type": sort_type},
+        quote_via=urllib.parse.quote
+    )
     r = await _client().get(
-        "/api/v1/tiktok/app/v3/fetch_video_search_result",
-        params={"keyword": keyword, "cursor": cursor, "count": count, "sort_type": sort_type},
+        f"/api/v1/tiktok/app/v3/fetch_video_search_result?{query}",
     )
     r.raise_for_status()
     logger.info("🟡 [tikhub] search keyword=%r cursor=%d", keyword, cursor)
     return r.json()
-
 
 def format_search(raw: Dict) -> Dict:
     data   = raw.get("data") or {}
@@ -61,8 +58,6 @@ def format_search(raw: Dict) -> Dict:
         "source":   "tikhub",
     }
 
-
-
 async def get_video_info(url: str) -> Dict:
     r = await _client().get(
         "/api/v1/tiktok/app/v3/fetch_one_video_by_share_url",
@@ -72,8 +67,6 @@ async def get_video_info(url: str) -> Dict:
     logger.info("🟡 [tikhub] video-info url=%s", url[:60])
     return r.json()
 
-
-
 async def get_comments(aweme_id: str, cursor: int = 0, count: int = 20) -> Dict:
     r = await _client().get(
         "/api/v1/tiktok/app/v3/fetch_video_comments",
@@ -82,7 +75,6 @@ async def get_comments(aweme_id: str, cursor: int = 0, count: int = 20) -> Dict:
     r.raise_for_status()
     logger.info("🟡 [tikhub] comments aweme_id=%s cursor=%d", aweme_id, cursor)
     return r.json()
-
 
 def format_comments(raw: Dict) -> List[Dict]:
     data     = raw.get("data") or {}
@@ -99,8 +91,6 @@ def format_comments(raw: Dict) -> List[Dict]:
         for c in comments
         if c.get("cid")
     ]
-
-
 
 async def get_profile(unique_id: str) -> Dict:
     r = await _client().get(
