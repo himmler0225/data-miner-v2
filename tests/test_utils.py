@@ -106,23 +106,6 @@ class TestSchedulerJobs:
     """Tests for scheduler jobs"""
 
     @pytest.mark.asyncio
-    async def test_crawl_trending_videos_structure(self):
-        """Test that crawl_trending_videos returns expected structure"""
-        from app.scheduler.jobs import crawl_trending_videos
-
-        # This will likely fail due to API call, but we test structure
-        result = await crawl_trending_videos()
-
-        assert isinstance(result, dict)
-        assert "success" in result
-
-        if result["success"]:
-            assert "videos_count" in result
-            assert "duration" in result
-        else:
-            assert "error" in result
-
-    @pytest.mark.asyncio
     async def test_health_check_job(self):
         """Test health check job"""
         from app.scheduler.jobs import health_check_job

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from app.middleware import verify_api_key, limiter
+from app.api.rate_limit_config import get_rate_limit
 from app.crawlers.tiktok.native import search_native, trending_native
 from app.crawlers.tiktok import tikhub, cache as search_cache
 from app.config.logger import Logger
@@ -10,7 +11,7 @@ logger = Logger.get(__name__)
 
 
 @router.get("/search", summary="TikTok Search (cache → native → TikHub)")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiktok"))
 async def tiktok_search(
     request: Request,
     response: Response,
@@ -51,7 +52,7 @@ async def tiktok_search(
 
 
 @router.get("/trending", summary="TikTok Trending (native)")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiktok"))
 async def tiktok_trending(
     request: Request,
     response: Response,
@@ -66,7 +67,7 @@ async def tiktok_trending(
 
 
 @router.get("/video-info", summary="TikTok Video Info (TikHub)")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiktok"))
 async def tiktok_video_info(
     request: Request,
     response: Response,
@@ -80,7 +81,7 @@ async def tiktok_video_info(
 
 
 @router.get("/comments", summary="TikTok Comments (TikHub)")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiktok"))
 async def tiktok_comments(
     request: Request,
     response: Response,
@@ -101,7 +102,7 @@ async def tiktok_comments(
 
 
 @router.get("/profiles/{handle}", summary="TikTok Profile (TikHub)")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiktok"))
 async def tiktok_profile(
     request: Request,
     response: Response,
@@ -114,7 +115,7 @@ async def tiktok_profile(
 
 
 @router.get("/transcript", summary="TikTok Video Transcript (TikHub)")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiktok"))
 async def tiktok_transcript(
     request: Request,
     response: Response,

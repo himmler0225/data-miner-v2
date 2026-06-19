@@ -12,12 +12,13 @@ from app.config.urls import proxy_manager
 from app.config.logger import Logger
 from app.schemas.response import ApiResponse
 from app.utils import retry_on_failure
+from app.api.rate_limit_config import get_rate_limit
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
 
 @router.get("/products/search", summary="Search For Products")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiki"))
 async def search_products_endpoint(
     request: Request,
     response: Response,
@@ -45,7 +46,7 @@ async def search_products_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/products/sales", summary="Flash Sale Tiki")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiki"))
 async def get_flash_sales_endpoint(
     request: Request,
     response: Response,
@@ -63,7 +64,7 @@ async def get_flash_sales_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/products/top-choice", summary="Top Deals Tiki")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiki"))
 async def get_top_choice_endpoint(
     request: Request,
     response: Response,
@@ -79,7 +80,7 @@ async def get_top_choice_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/products/maybe-you-like", summary="Tiki Recommend")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiki"))
 async def get_maybe_you_like_endpoint(
     request: Request,
     response: Response,
@@ -95,7 +96,7 @@ async def get_maybe_you_like_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/products/{product_id}", summary="Tiki Product Detail")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiki"))
 async def get_product_detail_endpoint(
     request: Request,
     response: Response,
@@ -113,7 +114,7 @@ async def get_product_detail_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/products/{product_id}/reviews", summary="Tiki Product Reviews")
-@limiter.limit("15/minute")
+@limiter.limit(get_rate_limit("tiki"))
 async def get_reviews_endpoint(
     request: Request,
     response: Response,

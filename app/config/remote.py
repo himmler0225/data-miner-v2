@@ -46,3 +46,26 @@ async def load_and_apply() -> None:
     vn = getattr(settings, "PROXY_VN", [])
     if vn:
         setattr(settings, "PROXY_LIST", vn)
+
+    try:
+        from app.config.urls import proxy_manager, proxy_manager_us
+        proxy_manager.set_proxies(getattr(settings, "PROXY_VN", []))
+        proxy_manager_us.set_proxies(getattr(settings, "PROXY_US", []))
+    except Exception:
+        pass
+
+    # Áp RATE_LIMIT_* vào limiter đã tạo lúc import. default_limits được parse
+    # trong constructor, nên build 1 limiter tạm rồi copy phần đã parse sang.
+    try:
+        from slowapi import Limiter
+        from app.middleware.rate_limit import limiter, get_identifier
+        tmp = Limiter(
+            key_func=get_identifier,
+            default_limits=[
+                getattr(settings, "RATE_LIMIT_DEFAULT"),
+                getattr(settings, "RATE_LIMIT_BURST"),
+            ],
+        )
+        limiter._default_limits = tmp._default_limits
+    except Exception:
+        pass

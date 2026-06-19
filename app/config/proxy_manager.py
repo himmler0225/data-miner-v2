@@ -16,12 +16,21 @@ class ProxyManager:
         self._ttl:        int           = ttl
         self._current:    Optional[str] = None
         self._expires_at: float         = 0.0
+        self._log_pool()
 
+    def set_proxies(self, proxies: List[str]) -> None:
+        """Replace the proxy pool at runtime (used when remote config loads)."""
+        self._proxies    = [p for p in proxies if p]
+        self._current    = None
+        self._expires_at = 0.0
+        self._log_pool()
+
+    def _log_pool(self) -> None:
         if self._proxies:
             hosts = [p.split("@")[-1] for p in self._proxies]
             logger.info(
                 "ProxyManager: %d proxy(ies), sticky TTL=%ds — %s",
-                len(self._proxies), ttl, ", ".join(hosts),
+                len(self._proxies), self._ttl, ", ".join(hosts),
             )
         else:
             logger.warning("⚠️  ProxyManager: no proxy configured — requests go direct")

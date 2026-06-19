@@ -86,8 +86,6 @@ LOG_LEVEL=INFO
 
 # Scheduler
 ENABLE_SCHEDULER=true
-TRENDING_CRON=0 6 * * *    # Daily at 6 AM
-KEYWORDS_CRON=0 8 * * *    # Daily at 8 AM
 CLEANUP_CRON=0 2 * * 0     # Sunday at 2 AM
 
 # Optional: Proxy
@@ -208,8 +206,6 @@ The application includes automatic scheduled tasks:
 
 | Task | Schedule | Description |
 |------|----------|-------------|
-| Trending Videos | Daily 6 AM | Crawl trending videos |
-| Popular Keywords | Daily 8 AM | Crawl videos for predefined keywords |
 | Data Cleanup | Sunday 2 AM | Clean up old data |
 | Health Check | Every hour | System health check |
 
@@ -218,11 +214,8 @@ The application includes automatic scheduled tasks:
 Edit cron expressions in `.env`:
 
 ```env
-# Run trending at 10 PM daily
-TRENDING_CRON=0 22 * * *
-
-# Run keywords every 6 hours
-KEYWORDS_CRON=0 */6 * * *
+# Run cleanup at 3 AM on Sundays
+CLEANUP_CRON=0 3 * * 0
 
 # Disable scheduler entirely
 ENABLE_SCHEDULER=false

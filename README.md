@@ -1,241 +1,171 @@
-# youtube-crawler
+# Data Miner API
 
-FastAPI service that scrapes YouTube via the internal InnerTube API and pushes structured data to `youtube-api`.
+A production-style **FastAPI** service that scrapes structured data from **YouTube, TikTok, and Tiki** through their internal (reverse-engineered) APIs and exposes it as a clean, authenticated REST API.
+
+Built to run behind rotating residential proxies, with centralised remote configuration, global rate limiting, and resilient parsing of constantly-changing upstream responses.
+
+---
+
+## Highlights
+
+- **3 platforms, one API** — YouTube (InnerTube + HTML), TikTok (reverse-engineered native client with a paid fallback), and Tiki e-commerce.
+- **Resilient parsing** — every upstream field is accessed defensively; structural drift surfaces as a typed error (`YouTubeStructureChangedError`) with the exact key path instead of a random `KeyError`.
+- **Rotating proxy pools** — separate VN / US residential pools with sticky TTL pinning and graceful direct-connection fallback.
+- **Remote configuration** — proxies and rate limits are loaded from a Supabase `config` table at startup, so they can change without a redeploy.
+- **Global rate limiting** — every endpoint is throttled per API key (or IP) to prevent abuse, with stricter per-route caps on hot endpoints.
+- **Anti-bot tooling** — randomised User-Agent pool, warmed TikTok session pool (shared `ttwid`/`msToken`), and request-signature generation.
 
 ---
 
 ## Architecture
 
 ```
-                    ┌────────────────────────────────────────────┐
-                    │              APScheduler (cron)             │
-                    │                                            │
-                    │  crawl_trending ──────────────────────┐   │
-                    │  crawl_shorts  ────────────────────┐  │   │
-                    │  crawl_location (26 cities) ────┐  │  │   │
-                    │  crawl_keywords ─────────────┐  │  │  │   │
-                    └──────────────────────────────│──│──│──│───┘
-                                                   │  │  │  │
-                                                   ▼  ▼  ▼  ▼
-                                          ingest_client.py
-                                          POST /internal/ingest/*
-                                                   │
-                                                   ▼
-                                             youtube-api
-
-     youtube-api (real-time, on cache miss)
-         │
-         ▼
-     GET /api/video/:id
-     GET /api/video/:id/comments
-     GET /api/videos/live
-     GET /api/videos/shorts
+        Client
+          │  X-API-Key
+          ▼
+   ┌──────────────────────────────────────────────┐
+   │                FastAPI app                     │
+   │  CORS → Rate limit → Logging → IP allowlist    │  middleware
+   │                     │                          │
+   │              verify_api_key (dep)              │
+   │                     ▼                          │
+   │     api/  ──►  crawlers/  ──►  upstream        │
+   └──────────────────────────────────────────────┘
+          │                         │
+          ▼                         ▼
+   ProxyManager (VN/US)      Supabase remote config
+                             (proxies + rate limits)
 ```
 
 ---
 
-## Design Patterns
+## Tech stack
 
-### 1. Service-per-Feature Layer
+FastAPI · Pydantic · httpx · slowapi · APScheduler · Supabase (REST) · Uvicorn
 
-Each data type has its own service module with a single responsibility:
+---
 
-```
-services/
-  trending.py        → top-level trending feed (HTML scrape + InnerTube fallback)
-  shorts.py          → Shorts Shelf
-  search.py          → keyword search with continuation token pagination
-  live.py            → live stream search
-  detail.py          → single video full metadata
-  comment.py         → comments + nested replies
-  channel.py         → channel video list
-  channel_info.py    → channel metadata
-  playlist.py        → playlist videos
-  location.py        → region-targeted search (gl/hl parameters)
-```
+## Design notes
 
-Services share no state and have no cross-dependencies — each can be tested or swapped independently.
+### Crawler-per-feature
+Each data type is an independent module under `crawlers/<platform>/<feature>/` with no shared state, so a feature can be tested or replaced in isolation.
 
-### 2. Error Classification + Retry Strategy
+### Error classification
+| Exception | Cause | Handling |
+|-----------|-------|----------|
+| `YouTubeStructureChangedError` | Missing/moved key in the response JSON | No retry — failing again is guaranteed; carries the missing key path for fast debugging |
+| `CrawlNetworkError` | Timeout / connection error / HTTP 429 | Retried with linear backoff (up to 3 attempts) |
 
-Two exception types enforce different recovery paths:
-
-| Exception | Cause | Retry behaviour |
-|-----------|-------|-----------------|
-| `YouTubeStructureChangedError` | Missing/moved key in response JSON | No retry — trips circuit breaker immediately, requires developer fix |
-| `CrawlNetworkError` | Timeout, connection error, HTTP 429 | Linear backoff, up to 3 attempts |
-
-This distinction prevents retry storms when YouTube changes its response shape — a structural error on attempt 1 would fail identically on attempts 2 and 3.
-
-### 3. Circuit Breaker
-
-Each scheduled job runs inside a circuit breaker:
-
-```
-CLOSED  (normal)
-  │  5 consecutive failures
-  ▼
-OPEN    (job skipped, logs warning)
-  │  app restart  /  manual reset via admin API
-  ▼
-CLOSED
-```
-
-A `YouTubeStructureChangedError` trips the circuit on the first failure. Transient network errors require 5 consecutive failures. This prevents a broken job from burning through rate limits or filling logs with identical stack traces.
-
-### 4. Safe Navigation
-
-All InnerTube response parsing uses safe access (`dict.get()`, `or {}`, optional chaining). YouTube changes its internal JSON structure regularly and without notice. Every key access is treated as potentially absent:
+### Safe navigation
+Upstream JSON is parsed with defensive access (`dict.get()`, `or {}`, default indices) because YouTube/TikTok change their internal shapes without notice:
 
 ```python
-title = (
-    renderer
-    .get("title", {})
-    .get("runs", [{}])[0]
-    .get("text", "")
-)
+title = renderer.get("title", {}).get("runs", [{}])[0].get("text", "")
 ```
 
-Structural failures surface as `YouTubeStructureChangedError` with the exact missing key path, not as a generic `KeyError`.
+### Proxy rotation
+`ProxyManager` pins one proxy from its pool for a TTL window (sticky sessions), reuses it across requests, rotates on demand or on failure, and falls back to a direct connection when the pool is empty. The VN pool serves all VN-focused crawling; the US pool is reserved for explicit US-geo requests.
 
-### 5. Dedicated Ingest Client
+### Remote configuration
+On startup, `config/remote.py` pulls the Supabase `config` table and applies `PROXY_VN`, `PROXY_US`, `RATE_LIMIT_DEFAULT`, and `RATE_LIMIT_BURST` — pushing the proxy values straight into the live `ProxyManager` instances.
 
-`ingest_client.py` is the sole component that calls `youtube-api`. It:
-- Owns all HTTP retry logic for the outbound connection
-- Never raises exceptions — crawl jobs continue even if the API is down
-- Normalises field names (camelCase → snake_case where needed) before sending
-- Keeps `0` as-is and never coerces numeric zeros to `None`
-
-This means a service failure in `youtube-api` never aborts an ongoing crawl job.
-
-### 6. Middleware Stack
-
-Applied in registration order (innermost first at request time):
-
-```
-RateLimitMiddleware    → per-key or per-IP throttle (slowapi)
-AuthMiddleware         → validate X-API-Key header
-LoggingMiddleware      → structured request/response log + X-Request-ID
-IPWhitelistMiddleware  → optional IP allowlist with service token bypass
-```
-
-Auth and rate-limit are placed before logging so rejected requests are still logged with their status.
-
-### 7. Proxy Rotation with Caching
-
-`ProxyManager` wraps a rotating residential proxy provider:
-- Caches the current proxy URL with its TTL so the rotation API is not called on every request
-- Parses TTL from the provider's human-readable message (`"proxy will expire in 1777s"`)
-- Falls back gracefully (direct connection) when no proxy key is configured
-
-### 8. Typed Data Contracts
-
-All inter-module data shapes are defined as `TypedDict` in `types.py`. Service functions return typed dicts; `ingest_client.py` accepts them directly. No untyped `dict` passed between layers.
+### Typed contracts
+Inter-module data shapes are declared as `TypedDict` in `types.py`; responses are wrapped in a consistent `ApiResponse` envelope.
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 app/
 ├── api/
-│   ├── routes.py              Real-time endpoints (X-API-Key required)
-│   └── admin.py               Manual job triggers, circuit breaker reset, proxy debug
-├── config/
-│   ├── constants.py           InnerTube endpoint names, filter params, sort codes
-│   ├── headers.py             Randomised User-Agent pool (Chrome weight ~65%)
-│   ├── urls.py                Base URLs, proxy manager instance
-│   └── logging_config.py      Structured logger — console + file handlers
-├── middleware/
-│   ├── auth_middleware.py      X-API-Key validation
-│   ├── ip_whitelist.py         IP allowlist
-│   ├── rate_limit_config.py    slowapi limiter setup
-│   └── logging_middleware.py   Request/response logging, X-Request-ID injection
-├── scheduler/
-│   ├── scheduler.py            APScheduler singleton (asyncio)
-│   ├── config.py               Job registration with cron triggers
-│   └── jobs.py                 Job implementations — retry, circuit breaker, batching
-├── services/                   One module per data type (see above)
-├── ingest_client.py            HTTP push layer → youtube-api
-├── exceptions.py               YouTubeStructureChangedError, CrawlNetworkError
-├── types.py                    TypedDicts for all data shapes
-└── utils.py                    httpx factory, proxy helpers, parse_view_count
+│   ├── youtube.py        # /api/videos, /api/channels, /api/playlists
+│   ├── tiktok.py         # /api/tiktok/*
+│   ├── tiki.py           # /api/tiki/*
+│   └── admin/            # /admin/proxy/*  (proxy management)
+├── crawlers/
+│   ├── youtube/          # InnerTube + HTML scrapers (search, detail, comment, live, shorts…)
+│   ├── tiktok/           # native client + TikHub fallback + request signing
+│   └── tiki/             # product search, detail, reviews, sales, recommendations
+├── config/               # settings, remote (Supabase), proxy_manager, headers, urls, logger
+├── middleware/           # auth, rate_limit, logging, ip_whitelist, client_info
+├── scheduler/            # APScheduler (cleanup, health)
+├── schemas/              # ApiResponse envelope
+├── exceptions.py         # YouTubeStructureChangedError, CrawlNetworkError
+├── types.py              # TypedDicts for all data shapes
+└── utils.py              # httpx factory, retry, parsing helpers
 ```
 
 ---
 
-## API Reference
+## API reference
 
-All endpoints require `X-API-Key` header.
+All endpoints require an `X-API-Key` header.
 
-| Method | Path | Params | Description |
-|--------|------|--------|-------------|
-| GET | `/api/videos/search` | `q`, `page`, `limit`, `sort` | Keyword search |
-| GET | `/api/videos/trending` | `limit` | Trending feed |
-| GET | `/api/videos/live` | `q`, `page`, `limit` | Live streams |
-| GET | `/api/videos/shorts` | `limit` | Shorts feed |
-| GET | `/api/videos/location` | `gl`, `hl`, `query`, `max_results` | Region-targeted search |
-| GET | `/api/video/{video_id}` | — | Full video detail |
-| GET | `/api/video/{video_id}/comments` | `page`, `limit` | Comments + replies |
-| GET | `/api/channel/{channel_id}` | — | Channel metadata |
-| GET | `/api/channel/{channel_id}/videos` | `page`, `limit` | Channel videos |
-| GET | `/api/channel/{channel_id}/playlists` | — | Channel playlists |
-| GET | `/api/playlist/{playlist_id}/videos` | — | Playlist videos |
+### YouTube — `/api`
+`GET /videos/search` · `GET /videos/by-topic` · `GET /videos/shorts` · `GET /videos/live` · `GET /videos/location` · `GET /videos/{video_id}` · `GET /videos/{video_id}/comments` · `GET /videos/comments/batch` · `GET /videos/{video_id}/transcript` · `GET /videos/transcript/batch` · `GET /channels/{channel_id}` · `GET /channels/{channel_id}/videos` · `GET /channels/{channel_id}/playlists` · `GET /playlists/{playlist_id}/videos`
 
-> `gl` uses ISO 3166-1 alpha-2 country codes. YouTube ignores lat/lng — geographic targeting works only via `gl`/`hl` in the InnerTube request context.
+> `gl` uses ISO 3166-1 alpha-2 country codes. YouTube ignores lat/lng — geo targeting works only via `gl`/`hl` in the InnerTube context.
 
----
+### TikTok — `/api/tiktok`
+`GET /search` (cache → native → TikHub) · `GET /trending` · `GET /video-info` · `GET /comments` · `GET /profiles/{handle}` · `GET /transcript`
 
-## Scheduled Jobs
+### Tiki — `/api/tiki`
+`GET /products/search` · `GET /products/sales` · `GET /products/top-choice` · `GET /products/maybe-you-like` · `GET /products/{product_id}` · `GET /products/{product_id}/reviews`
 
-| Job | Default cron | Output |
-|-----|-------------|--------|
-| `crawl_trending_videos` | `0 7 * * *` | Top 100 trending → `ingest/trending` |
-| `crawl_shorts_videos` | `0 9 * * *` | Shorts feed → `ingest/shorts` |
-| `crawl_location_videos` | `0 6 * * *` | 26 city/language pairs → `ingest/search` |
-| `crawl_popular_keywords` | `0 8 * * *` | Fixed keyword list → `ingest/search` |
-| `cleanup_old_data` | `0 2 * * 0` | Weekly cleanup |
-| `health_check_job` | every 60 min | System ping |
+### Admin — `/admin`
+`GET /proxy/status` · `POST /proxy/rotate` · `GET /proxy/test`
 
-Cron expressions can be overridden via environment variables (e.g. `TRENDING_CRON`).
+Full interactive docs at `http://localhost:8000/docs`.
 
 ---
 
-## Environment Variables
+## Rate limiting
+
+A global limit (`RATE_LIMIT_DEFAULT` + `RATE_LIMIT_BURST`) is enforced on **every** endpoint via `SlowAPIMiddleware`, keyed by API-key prefix (falling back to client IP). Hot endpoints add stricter per-route caps with `@limiter.limit(...)`. The limit values are managed remotely via Supabase.
+
+---
+
+## Configuration
+
+Most settings come from environment variables; **proxies and rate limits are sourced from the Supabase `config` table** (see `config/remote.py`).
 
 ```env
-PORT=8000
+APP_ENV=development
+LOG_LEVEL=INFO
 
+# Auth
 API_KEYS=key1,key2
+CORS_ORIGINS=http://localhost:3000,http://localhost:8000
 
-IP_WHITELIST=
-IP_WHITELIST_ENABLED=false
-SERVICE_TOKENS=name:token
+# IP allowlist (optional)
+ENABLE_IP_WHITELIST=false
+WHITELISTED_IPS=
+WHITELISTED_SERVICES=
 
-PROXY_URL=
-PROXY_KEYS=
-
+# Scheduler
 ENABLE_SCHEDULER=true
-TRENDING_CRON=0 7 * * *
-SHORTS_CRON=0 9 * * *
-LOCATION_CRON=0 6 * * *
-KEYWORDS_CRON=0 8 * * *
 CLEANUP_CRON=0 2 * * 0
 HEALTH_CHECK_INTERVAL=60
 
-INGEST_API_URL=http://localhost:3000
-INGEST_SERVICE_KEY=
-```
+# Rate-limit backend (limit values themselves come from Supabase)
+RATE_LIMIT_STORAGE=memory://
 
-`INGEST_SERVICE_KEY` must match `INTERNAL_SERVICE_KEY` in `youtube-api`.
+# TikTok TikHub fallback
+TIKAP_API_KEY=
+
+# Supabase remote config (proxies + rate limits)
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=
+```
 
 ---
 
-## Development
+## Getting started
 
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Swagger UI: `http://localhost:8000/docs`
+Then open `http://localhost:8000/docs` and authorise with your `X-API-Key`.
