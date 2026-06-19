@@ -12,9 +12,10 @@ from app.crawlers.youtube.shorts import get_shorts_feed
 from app.crawlers.youtube.location import get_videos_by_region
 from app.utils import resolve_channel_id_from_handle, retry_on_failure
 from app.middleware import verify_api_key, limiter
+from app.api.rate_limit_config import get_rate_limit
 from app.config.logger import Logger
 from app.config.urls import proxy_manager, proxy_manager_us
-from app.config.settings import PROXY_US
+from app.config import settings
 from app.schemas.response import ApiResponse
 
 from dotenv import load_dotenv
@@ -76,7 +77,7 @@ async def videos_by_topic(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/videos/search", summary="Search Videos")
-@limiter.limit("30/minute")
+@limiter.limit(get_rate_limit("search"))
 async def search_videos(
     request: Request,
     response: Response,
@@ -138,7 +139,7 @@ async def get_videos_location(
 ):
     try:
         # US-geo queries go through the US proxy; everything else via VN.
-        mgr = proxy_manager_us if gl.upper() == "US" and PROXY_US else proxy_manager
+        mgr = proxy_manager_us if gl.upper() == "US" and settings.PROXY_US else proxy_manager
         proxy = await mgr.get_proxy()
         videos = await get_videos_by_region(gl=gl, hl=hl, query=query, proxy=proxy, max_results=max_results)
         return ApiResponse.ok({"gl": gl, "query": query, "total": len(videos), "videos": videos})

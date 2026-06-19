@@ -12,6 +12,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from app.api.youtube import router as youtube_router
 from app.api.tiki import router as tiki_router
 from app.api.tiktok import router as tiktok_router
@@ -23,12 +24,10 @@ from app.middleware import (
     limiter,
     rate_limit_exceeded_handler,
 )
-from app.config.settings import LOG_LEVEL, ENABLE_IP_WHITELIST, RATE_LIMIT_DEFAULT
+from app.config.settings import LOG_LEVEL, ENABLE_IP_WHITELIST, RATE_LIMIT_DEFAULT, CORS_ORIGINS
 from app.config.logger import Logger
 from app.schemas.response import ApiResponse
 Logger.setup(level=LOG_LEVEL)
-
-from app.crawlers.youtube.live_ws_client import connect_background, disconnect_from_nestjs
 
 logger = Logger.get(__name__)
 
@@ -41,8 +40,6 @@ async def lifespan(app: FastAPI):
     logger.info("IP whitelist: %s", ENABLE_IP_WHITELIST)
     logger.info("Rate limit: %s", RATE_LIMIT_DEFAULT)
     logger.info("Scheduler disabled — demo mode")
-    connect_background()
-    logger.info("🔌 NestJS WebSocket connection initialized")
 
     # Warm the TikTok session pool (shared ttwid jars) + hourly refresher.
     pool_task = None
@@ -67,8 +64,6 @@ async def lifespan(app: FastAPI):
     logger.info("Data Miner API shutting down...")
     if pool_task:
         pool_task.cancel()
-    await disconnect_from_nestjs()
-    logger.info("NestJS WebSocket disconnected")
 
 app = FastAPI(
     title="Data Miner API",
@@ -95,20 +90,18 @@ async def add_process_time(request: Request, call_next):
     response.headers["X-Process-Time-Ms"] = str(round((time.perf_counter() - start) * 1000, 2))
     return response
 
-origins = [
-    "http://localhost:3000",
-    "http://localhost:8000",
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.add_middleware(IPWhitelistMiddleware)
+# Global rate limit (RATE_LIMIT_DEFAULT + RATE_LIMIT_BURST) on every endpoint.
+# Placed inside LoggingMiddleware so throttled requests are still logged.
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(ClientInfoMiddleware)
 app.include_router(youtube_router, prefix="/api", tags=["YouTube"])

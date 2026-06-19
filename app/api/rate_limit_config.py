@@ -8,6 +8,8 @@ RATE_LIMITS = {
     "playlist": "10/minute",
     "comments": "15/minute",
     "location": "5/minute",
+    "tiktok": "15/minute",
+    "tiki": "15/minute",
 }
 
 BURST_LIMITS = {

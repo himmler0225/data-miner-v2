@@ -7,9 +7,7 @@ from .shorts import get_shorts_feed
 from .location import get_videos_by_region
 from .channel import get_channel_videos
 from .channel_info import get_channel_info
-from .channel_enricher import enrich_channels_batch
 from .playlist import get_playlist_videos, get_videos_from_playlist
-from .live_ws_client import connect_background, disconnect_from_nestjs, push_live_videos
 
 __all__ = [
     "get_trending_videos",
@@ -21,10 +19,6 @@ __all__ = [
     "get_videos_by_region",
     "get_channel_videos",
     "get_channel_info",
-    "enrich_channels_batch",
     "get_playlist_videos",
     "get_videos_from_playlist",
-    "connect_background",
-    "disconnect_from_nestjs",
-    "push_live_videos",
 ]
