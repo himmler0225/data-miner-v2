@@ -5,6 +5,17 @@ import httpx
 _REMOTABLE_STR = frozenset({"PROXY_VN", "PROXY_US", "RATE_LIMIT_DEFAULT", "RATE_LIMIT_BURST"})
 
 
+def _normalize_proxy(p: str) -> str:
+    """Convert host:port:user:pass → http://user:pass@host:port. Pass-through if already a URL."""
+    if p.startswith("http://") or p.startswith("https://") or p.startswith("socks"):
+        return p
+    parts = p.split(":")
+    if len(parts) == 4:
+        host, port, user, passwd = parts
+        return f"http://{user}:{passwd}@{host}:{port}"
+    return p
+
+
 async def load_and_apply() -> None:
     from app.config.settings import SUPABASE_URL, SUPABASE_SERVICE_KEY
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
@@ -36,10 +47,10 @@ async def load_and_apply() -> None:
         if remote.get(key):
             setattr(settings, key, remote[key])
 
-    # PROXY_VN / PROXY_US là list — parse lại sau khi set string
     for key in ("PROXY_VN", "PROXY_US"):
         if remote.get(key):
-            parsed = [p.strip() for p in remote[key].split(",") if p.strip()]
+            raw    = [p.strip() for p in remote[key].split(",") if p.strip()]
+            parsed = [_normalize_proxy(p) for p in raw]
             setattr(settings, key, parsed)
 
     # PROXY_LIST re-derive từ PROXY_VN
@@ -54,8 +65,6 @@ async def load_and_apply() -> None:
     except Exception:
         pass
 
-    # Áp RATE_LIMIT_* vào limiter đã tạo lúc import. default_limits được parse
-    # trong constructor, nên build 1 limiter tạm rồi copy phần đã parse sang.
     try:
         from slowapi import Limiter
         from app.middleware.rate_limit import limiter, get_identifier

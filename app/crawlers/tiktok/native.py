@@ -17,16 +17,13 @@ if _TIKTOK_DIR not in sys.path:
 _NATIVE_TIMEOUT = 25.0  # hard cap — exceeded → TikHub fallback kicks in
 
 async def _proxy_dict() -> Optional[Dict]:
-    """TikTok WAF blocks VN proxy on homepage → use US proxy for session warm+search."""
-    from app.config.urls import proxy_manager_us, proxy_manager
-    mgr = proxy_manager_us if proxy_manager_us._proxies else proxy_manager
-    url = await mgr.get_proxy()
+    """TikTok requires US proxy — VN residential IPs are blocked."""
+    from app.config.urls import proxy_manager_us
+    if not proxy_manager_us._proxies:
+        logger.warning("🔴 [tiktok] US proxy not configured — TikTok will likely fail")
+        return None
+    url = await proxy_manager_us.get_proxy()
     return {"http": url, "https": url} if url else None
-
-
-# TikTok validates (ttwid + msToken + IP + UA) as ONE consistent profile. They
-# must be minted AND used together. Each identity binds a warmed session (ttwid),
-# the proxy it was warmed through, and an msToken refreshed on that same session.
 
 _MSTOKEN_TTL = 50.0  # reuse within same session; TikTok expires at ~55s
 
@@ -47,34 +44,48 @@ _pool_lock  = threading.Lock()
 
 def _warm_one_identity(proxy: Optional[Dict]) -> Optional[TikTokIdentity]:
     """Warm a session THROUGH `proxy` so ttwid + IP + UA are bound together.
-    msToken is NOT managed here — SearchService mints it on this trusted session."""
-    import requests
+    Uses curl_cffi to impersonate Chrome TLS fingerprint and bypass TikTok WAF."""
+    from curl_cffi import requests as cffi_requests
     from services import TikTokBaseService
-    s = requests.Session()
-    if proxy:
-        s.proxies.update(proxy)
-    # Use the same macOS Chrome UA that search will use — cookies bind to UA.
+
+    proxy_url = proxy.get("https") or proxy.get("http") if proxy else None
     ua = TikTokBaseService.MAC_SEARCH_UA
-    headers = {
-        "User-Agent": ua,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "sec-ch-ua": '"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"macOS"',
-    }
+
+    proxy_url = (proxy or {}).get("https") or (proxy or {}).get("http")
+    logger.info("🔵 [pool] warming session proxy=%s", proxy_url[:30] if proxy_url else "DIRECT⚠️")
+    if not proxy_url:
+        logger.warning("🔴 [pool] no proxy available — ttwid will bind to server IP, search will likely fail")
+
     try:
-        s.get(TikTokBaseService.BASE_URL, headers=headers, timeout=10, allow_redirects=True)
-        s.get(f"{TikTokBaseService.BASE_URL}/explore", headers=headers, timeout=10, allow_redirects=True)
+        s = cffi_requests.Session(impersonate="chrome120", proxies=proxy)
+        s.headers.update({
+            "User-Agent": ua,
+            "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
+        })
+        s.get(TikTokBaseService.BASE_URL, timeout=25, allow_redirects=True)
+        s.get(f"{TikTokBaseService.BASE_URL}/explore", timeout=20, allow_redirects=True)
     except Exception as e:
-        logger.warning("🔴 [pool] warm failed: %s", e)
-        return None
-    if not any(c.name == "ttwid" for c in s.cookies):
+        err_str = str(e)
+        if "timed out" in err_str.lower() or "timeout" in err_str.lower():
+            logger.warning("🟡 [pool] warm timeout proxy=%s — retrying once", proxy_url)
+            try:
+                s2 = cffi_requests.Session(impersonate="chrome120", proxies=proxy)
+                s2.headers.update({"User-Agent": ua, "Accept-Language": "en-US,en;q=0.9"})
+                s2.get(TikTokBaseService.BASE_URL, timeout=30, allow_redirects=True)
+                s = s2
+            except Exception as e2:
+                logger.warning("🔴 [pool] warm retry also failed proxy=%s err=%s", proxy_url, e2)
+                return None
+        else:
+            logger.warning("🔴 [pool] warm failed proxy=%s err=%s", proxy_url, e)
+            return None
+
+    cookie_names = set(s.cookies.keys()) if hasattr(s.cookies, "keys") else {c.name for c in s.cookies}
+    if "ttwid" not in cookie_names:
         logger.warning("🔴 [pool] session warmed without ttwid — discarding")
         return None
-    cookies = {c.name for c in s.cookies}
+
+    cookies = cookie_names
     logger.info("🔵 [pool] identity ready cookies=%s", sorted(cookies))
     return TikTokIdentity(session=s, proxy=proxy, ua=ua)
 
@@ -212,6 +223,9 @@ async def search_native(
         asyncio.to_thread(_search_with_identity, ident, keyword, count, cursor, region, language),
         timeout=_NATIVE_TIMEOUT,
     )
+
+    logger.info("🔵 [native] raw result success=%s data_len=%d",
+                result.get("success"), len(result.get("data") or []))
 
     if not result.get("data"):
         ident.mstoken = None
