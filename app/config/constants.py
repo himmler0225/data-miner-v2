@@ -29,3 +29,26 @@ CLIENT_GL      = "VN"
 INNERTUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
 
 DEFAULT_TIMEOUT = 15
+
+# TikTok session pool
+TIKTOK_POOL_SIZE        = 3
+TIKTOK_NATIVE_TIMEOUT   = 25.0   # seconds — hard cap per search
+TIKTOK_WARM_TIMEOUT     = 25.0   # first warm attempt
+TIKTOK_WARM_TIMEOUT_2   = 30.0   # retry warm attempt
+TIKTOK_WARM_EXPLORE     = 20.0   # /explore page warm
+MSTOKEN_TTL             = 50.0   # reuse within session; TikTok expires ~55s
+POOL_REFRESH_INTERVAL   = 600.0  # 10 min — stay within sticky-proxy window
+
+# TikTok search cache
+TIKTOK_CACHE_TTL        = 1800.0  # 30 min
+TIKTOK_CACHE_MAX_SIZE   = 500
+
+# TikHub API client
+TIKHUB_TIMEOUT          = 20.0
+TIKHUB_MAX_CONN         = 10
+TIKHUB_MAX_KEEPALIVE    = 5
+
+# YouTube / HTTP
+YOUTUBE_KEY_TTL         = 86400   # 24h
+HTTP_MAX_CONNECTIONS    = 20
+HTTP_MAX_KEEPALIVE      = 10

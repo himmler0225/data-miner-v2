@@ -7,6 +7,11 @@ import os
 import sys
 import time as _time
 from typing import Dict, List, Optional
+from app.config.constants import (
+    TIKTOK_POOL_SIZE, TIKTOK_NATIVE_TIMEOUT, TIKTOK_WARM_TIMEOUT,
+    TIKTOK_WARM_TIMEOUT_2, TIKTOK_WARM_EXPLORE, MSTOKEN_TTL, POOL_REFRESH_INTERVAL,
+)
+from app.exceptions import NativeSearchError
 
 logger = Logger.get(__name__)
 
@@ -14,7 +19,7 @@ _TIKTOK_DIR = os.path.dirname(__file__)
 if _TIKTOK_DIR not in sys.path:
     sys.path.insert(0, _TIKTOK_DIR)
 
-_NATIVE_TIMEOUT = 25.0  # hard cap — exceeded → TikHub fallback kicks in
+_NATIVE_TIMEOUT = TIKTOK_NATIVE_TIMEOUT
 
 async def _proxy_dict() -> Optional[Dict]:
     """TikTok requires US proxy — VN residential IPs are blocked."""
@@ -25,7 +30,7 @@ async def _proxy_dict() -> Optional[Dict]:
     url = await proxy_manager_us.get_proxy()
     return {"http": url, "https": url} if url else None
 
-_MSTOKEN_TTL = 50.0  # reuse within same session; TikTok expires at ~55s
+_MSTOKEN_TTL = MSTOKEN_TTL
 
 @dataclasses.dataclass
 class TikTokIdentity:
@@ -36,7 +41,7 @@ class TikTokIdentity:
     mstoken_ts:      float = 0.0           # time.monotonic() when it was minted
     lock:            threading.Lock = dataclasses.field(default_factory=threading.Lock)
 
-_POOL_SIZE  = 3
+_POOL_SIZE  = TIKTOK_POOL_SIZE
 _pool: List[TikTokIdentity] = []
 _pool_cycle = None
 _pool_lock  = threading.Lock()
@@ -62,8 +67,8 @@ def _warm_one_identity(proxy: Optional[Dict]) -> Optional[TikTokIdentity]:
             "User-Agent": ua,
             "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
         })
-        s.get(TikTokBaseService.BASE_URL, timeout=25, allow_redirects=True)
-        s.get(f"{TikTokBaseService.BASE_URL}/explore", timeout=20, allow_redirects=True)
+        s.get(TikTokBaseService.BASE_URL, timeout=TIKTOK_WARM_TIMEOUT, allow_redirects=True)
+        s.get(f"{TikTokBaseService.BASE_URL}/explore", timeout=TIKTOK_WARM_EXPLORE, allow_redirects=True)
     except Exception as e:
         err_str = str(e)
         if "timed out" in err_str.lower() or "timeout" in err_str.lower():
@@ -71,7 +76,7 @@ def _warm_one_identity(proxy: Optional[Dict]) -> Optional[TikTokIdentity]:
             try:
                 s2 = cffi_requests.Session(impersonate="chrome120", proxies=proxy)
                 s2.headers.update({"User-Agent": ua, "Accept-Language": "en-US,en;q=0.9"})
-                s2.get(TikTokBaseService.BASE_URL, timeout=30, allow_redirects=True)
+                s2.get(TikTokBaseService.BASE_URL, timeout=TIKTOK_WARM_TIMEOUT_2, allow_redirects=True)
                 s = s2
             except Exception as e2:
                 logger.warning("🔴 [pool] warm retry also failed proxy=%s err=%s", proxy_url, e2)
@@ -112,7 +117,7 @@ def _next_identity() -> Optional[TikTokIdentity]:
         return next(_pool_cycle)
 
 
-async def session_pool_refresher(interval: float = 600.0) -> None:
+async def session_pool_refresher(interval: float = POOL_REFRESH_INTERVAL) -> None:
     """Refresh every 10 min to stay within the sticky-proxy window (15 min)."""
     while True:
         await asyncio.sleep(interval)
@@ -213,11 +218,10 @@ async def search_native(
     ident = _next_identity()
 
     if ident is None:
-        # Pool empty (warm failed) → one-off identity bound to a fresh proxy.
         proxy = await _proxy_dict()
         ident = await asyncio.to_thread(_warm_one_identity, proxy)
         if ident is None:
-            return {"success": False, "videos": [], "count": 0}
+            raise NativeSearchError("pool exhausted and on-demand warm failed")
 
     result = await asyncio.wait_for(
         asyncio.to_thread(_search_with_identity, ident, keyword, count, cursor, region, language),

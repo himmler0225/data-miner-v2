@@ -1,18 +1,23 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import urllib.parse
 import httpx
 
 from app.config.logger import Logger
-from app.config.settings import TIKAP_API_KEY
+import app.config.settings as _s
+from app.config.constants import TIKHUB_TIMEOUT, TIKHUB_MAX_CONN, TIKHUB_MAX_KEEPALIVE
+from app.exceptions import TikHubError
 
 logger = Logger.get(__name__)
 
 _BASE = "https://api.tikhub.io"
-_HEADERS = {"Authorization": f"Bearer {TIKAP_API_KEY}"}
 
 _http: Optional[httpx.AsyncClient] = None
+
+
+def _get_headers() -> dict:
+    return {"Authorization": f"Bearer {_s.TIKAP_API_KEY}"}
 
 
 def _client() -> httpx.AsyncClient:
@@ -20,12 +25,23 @@ def _client() -> httpx.AsyncClient:
     if _http is None or _http.is_closed:
         _http = httpx.AsyncClient(
             base_url=_BASE,
-            headers=_HEADERS,
-            timeout=20,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            timeout=TIKHUB_TIMEOUT,
+            limits=httpx.Limits(max_connections=TIKHUB_MAX_CONN, max_keepalive_connections=TIKHUB_MAX_KEEPALIVE),
         )
     return _http
 
+
+async def _get(path: str, params: dict = None) -> Dict:
+    try:
+        r = await _client().get(path, params=params or {}, headers=_get_headers())
+        r.raise_for_status()
+        return r.json()
+    except httpx.HTTPStatusError as e:
+        raise TikHubError(f"TikHub {e.response.status_code} on {path}") from e
+    except httpx.TimeoutException as e:
+        raise TikHubError(f"TikHub timeout on {path}") from e
+    except httpx.NetworkError as e:
+        raise TikHubError(f"TikHub network error on {path}") from e
 
 
 async def search_videos(
@@ -38,12 +54,9 @@ async def search_videos(
         {"keyword": keyword, "cursor": cursor, "count": count, "sort_type": sort_type},
         quote_via=urllib.parse.quote
     )
-    r = await _client().get(
-        f"/api/v1/tiktok/app/v3/fetch_video_search_result?{query}",
-    )
-    r.raise_for_status()
+    result = await _get(f"/api/v1/tiktok/app/v3/fetch_video_search_result?{query}")
     logger.info("🟡 [tikhub] search keyword=%r cursor=%d", keyword, cursor)
-    return r.json()
+    return result
 
 def format_search(raw: Dict) -> Dict:
     data   = raw.get("data") or {}
@@ -59,33 +72,26 @@ def format_search(raw: Dict) -> Dict:
     }
 
 async def get_video_info(url: str) -> Dict:
-    r = await _client().get(
-        "/api/v1/tiktok/app/v3/fetch_one_video_by_share_url",
-        params={"share_url": url},
-    )
-    r.raise_for_status()
+    result = await _get("/api/v1/tiktok/app/v3/fetch_one_video_by_share_url", {"share_url": url})
     logger.info("🟡 [tikhub] video-info url=%s", url[:60])
-    return r.json()
+    return result
 
 async def get_comments(aweme_id: str, cursor: int = 0, count: int = 20) -> Dict:
-    r = await _client().get(
-        "/api/v1/tiktok/app/v3/fetch_video_comments",
-        params={"aweme_id": aweme_id, "cursor": cursor, "count": count},
-    )
-    r.raise_for_status()
+    result = await _get("/api/v1/tiktok/app/v3/fetch_video_comments",
+                        {"aweme_id": aweme_id, "cursor": cursor, "count": count})
     logger.info("🟡 [tikhub] comments aweme_id=%s cursor=%d", aweme_id, cursor)
-    return r.json()
+    return result
 
 def format_comments(raw: Dict) -> List[Dict]:
     data     = raw.get("data") or {}
     comments = data.get("comments") or []
     return [
         {
-            "comment_id":    c.get("cid"),
-            "content":       (c.get("text") or ""),
-            "author":        (c.get("user") or {}).get("nickname", ""),
-            "likes":         c.get("digg_count", 0),
-            "replies_count": c.get("reply_comment_total", 0),
+            "comment_id":     c.get("cid"),
+            "content":        (c.get("text") or ""),
+            "author":         (c.get("user") or {}).get("nickname", ""),
+            "likes":          c.get("digg_count", 0),
+            "replies_count":  c.get("reply_comment_total", 0),
             "published_time": str(c.get("create_time", "")),
         }
         for c in comments
@@ -93,33 +99,22 @@ def format_comments(raw: Dict) -> List[Dict]:
     ]
 
 async def get_profile(unique_id: str) -> Dict:
-    r = await _client().get(
-        "/api/v1/tiktok/web/fetch_user_profile",
-        params={"unique_id": unique_id},
-    )
-    r.raise_for_status()
+    result = await _get("/api/v1/tiktok/web/fetch_user_profile", {"unique_id": unique_id})
     logger.info("🟡 [tikhub] profile unique_id=%s", unique_id)
-    return r.json()
-
+    return result
 
 
 async def get_transcript(aweme_id: str) -> Dict:
-    r = await _client().get(
-        "/api/v1/tiktok/app/v3/fetch_video_caption",
-        params={"aweme_id": aweme_id},
-    )
-    r.raise_for_status()
+    result = await _get("/api/v1/tiktok/app/v3/fetch_video_caption", {"aweme_id": aweme_id})
     logger.info("🟡 [tikhub] transcript aweme_id=%s", aweme_id)
-    return r.json()
+    return result
 
 
 def format_transcript(raw: Dict) -> Optional[Dict]:
-    """Extract subtitle text from TikHub caption response."""
     data     = raw.get("data") or {}
     captions = data.get("caption_info_list") or []
     if not captions:
         return None
-    # Prefer Vietnamese, fallback to English, then first available
     for lang in ("vie", "eng"):
         cap = next((c for c in captions if c.get("language_code") == lang), None)
         if cap:
@@ -130,13 +125,12 @@ def format_transcript(raw: Dict) -> Optional[Dict]:
     text = cap.get("caption_text") or ""
     vid = data.get("aweme_id", "")
     return {
-        "aweme_id":     vid,
-        "language":     cap.get("language_code", ""),
-        "text":         text,
-        "char_count":   len(text),
-        "available":    bool(text),
+        "aweme_id":   vid,
+        "language":   cap.get("language_code", ""),
+        "text":       text,
+        "char_count": len(text),
+        "available":  bool(text),
     }
-
 
 
 def _fmt_video(v: Dict) -> Dict:

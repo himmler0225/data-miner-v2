@@ -5,6 +5,7 @@ from app.crawlers.tiktok.native import search_native, trending_native
 from app.crawlers.tiktok import tikhub, cache as search_cache
 from app.config.logger import Logger
 from app.schemas.response import ApiResponse
+from app.exceptions import NativeSearchError, TikHubError
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
@@ -36,6 +37,8 @@ async def tiktok_search(
             search_cache.put(cache_key, result)
             return ApiResponse.ok(result)
         logger.warning("🟡 [search] native empty → TikHub fallback")
+    except NativeSearchError as e:
+        logger.warning("🔴 [search] native pool exhausted → TikHub fallback: %s", e)
     except Exception as e:
         logger.warning("🔴 [search] native failed (%s) → TikHub fallback", e)
 
@@ -47,6 +50,8 @@ async def tiktok_search(
         if formatted.get("videos"):
             search_cache.put(cache_key, formatted)
         return ApiResponse.ok(formatted)
+    except TikHubError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

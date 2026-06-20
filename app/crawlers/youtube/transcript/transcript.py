@@ -4,30 +4,30 @@ import asyncio
 from typing import Dict, List, Optional
 
 from app.config.logger import Logger
+from app.config.urls import proxy_manager
 
 logger = Logger.get(__name__)
 
-# Preferred language order for Vietnamese product review content
-_LANG_PRIORITY = ["vi", "en", "a.vi", "a.en"]  # a.* = auto-generated
+_LANG_PRIORITY = ["vi", "en", "a.vi", "a.en"]
 
 
-def _fetch_sync(video_id: str) -> Optional[Dict]:
-    """Runs in a thread — youtube-transcript-api is synchronous."""
+def _fetch_sync(video_id: str, proxy_url: Optional[str] = None) -> Optional[Dict]:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
 
-        api = YouTubeTranscriptApi()
-        print(api)
+        proxy_config = None
+        if proxy_url:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+            proxy_config = GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+        api = YouTubeTranscriptApi(proxy_config=proxy_config)
 
-        # List available transcripts
         try:
             transcript_list = api.list(video_id)
         except TranscriptsDisabled:
             logger.info("🟡 [transcript] disabled for %s", video_id)
             return None
 
-        # Try preferred languages first
         for lang in _LANG_PRIORITY:
             try:
                 transcript = transcript_list.find_transcript([lang])
@@ -43,7 +43,6 @@ def _fetch_sync(video_id: str) -> Optional[Dict]:
             except (NoTranscriptFound, Exception):
                 continue
 
-        # Last resort: use the first available transcript
         try:
             first    = next(iter(transcript_list))
             segments = first.fetch()
@@ -64,11 +63,13 @@ def _fetch_sync(video_id: str) -> Optional[Dict]:
 
 
 async def get_transcript(video_id: str) -> Optional[Dict]:
-    """Async wrapper around the synchronous youtube-transcript-api."""
-    result = await asyncio.to_thread(_fetch_sync, video_id)
+    proxy_url = await proxy_manager.get_proxy()
+    result = await asyncio.to_thread(_fetch_sync, video_id, proxy_url)
     if result:
-        logger.info("🟢 [transcript] %s — lang=%s chars=%d",
+        logger.info("🟢 [transcript] %s lang=%s chars=%d",
                     video_id, result["language"], result["char_count"])
+    else:
+        logger.warning("🔴 [transcript] %s — not available", video_id)
     return result
 
 
@@ -76,7 +77,6 @@ async def get_transcript_batch(
     video_ids: List[str],
     concurrency: int = 3,
 ) -> Dict[str, Optional[Dict]]:
-    """Fetch transcripts for multiple videos in parallel."""
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(vid: str):
@@ -86,6 +86,5 @@ async def get_transcript_batch(
     pairs = await asyncio.gather(*[_one(v) for v in video_ids])
     results = {vid: data for vid, data in pairs}
     found = sum(1 for v in results.values() if v)
-    logger.info("🟢 [transcript/batch] %d/%d videos have transcripts",
-                found, len(video_ids))
+    logger.info("🟢 [transcript/batch] %d/%d videos have transcripts", found, len(video_ids))
     return results
