@@ -12,7 +12,7 @@ from app.crawlers.youtube.shorts import get_shorts_feed
 from app.crawlers.youtube.location import get_videos_by_region
 from app.utils import resolve_channel_id_from_handle, retry_on_failure
 from app.middleware import verify_api_key, limiter
-from app.api.rate_limit_config import get_rate_limit
+from app.api.rate_limit_config import endpoint_limit
 from app.config.logger import Logger
 from app.config.urls import proxy_manager, proxy_manager_us
 from app.config import settings
@@ -77,7 +77,7 @@ async def videos_by_topic(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/videos/search", summary="Search Videos")
-@limiter.limit(get_rate_limit("search"))
+@limiter.limit(endpoint_limit("search"))
 async def search_videos(
     request: Request,
     response: Response,

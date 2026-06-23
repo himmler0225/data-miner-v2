@@ -6,7 +6,7 @@ from app.middleware import verify_api_key, limiter
 from app.config.urls import proxy_manager
 from app.schemas.response import ApiResponse
 from app.utils import retry_on_failure
-from app.api.rate_limit_config import get_rate_limit
+from app.api.rate_limit_config import endpoint_limit
 
 from app.crawlers.fpt_shop.search import search_products
 from app.crawlers.fpt_shop.detail import get_product_by_upcs
@@ -16,7 +16,7 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/products/search", summary="Search FPTShop Products")
-@limiter.limit(get_rate_limit("fptshop"))
+@limiter.limit(endpoint_limit("fptshop"))
 async def search_products_endpoint(
     request: Request,
     response: Response,
@@ -71,7 +71,7 @@ async def search_products_endpoint(
 
 
 @router.get("/products/detail/{upc}", summary="Get Product Detail (FPTShop)")
-@limiter.limit(get_rate_limit("fptshop"))
+@limiter.limit(endpoint_limit("fptshop"))
 async def get_product_detail_endpoint(
     request: Request,
     response: Response,
@@ -94,7 +94,7 @@ async def get_product_detail_endpoint(
 
 
 @router.get("/products/{product_id}/reviews", summary="Get Product Reviews (FPTShop)")
-@limiter.limit(get_rate_limit("fptshop"))
+@limiter.limit(endpoint_limit("fptshop"))
 async def get_reviews_endpoint(
     request: Request,
     response: Response,

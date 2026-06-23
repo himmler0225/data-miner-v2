@@ -21,6 +21,7 @@ from app.api.admin import router as admin_router
 from app.middleware import (
     LoggingMiddleware,
     IPWhitelistMiddleware,
+    BffGuardMiddleware,
     ClientInfoMiddleware,
     limiter,
     rate_limit_exceeded_handler,
@@ -95,6 +96,7 @@ app.add_middleware(
 )
 
 app.add_middleware(IPWhitelistMiddleware)
+app.add_middleware(BffGuardMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(ClientInfoMiddleware)

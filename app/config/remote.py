@@ -1,8 +1,17 @@
 from __future__ import annotations
+
+import json
 import sys
+
 import httpx
 
 _REMOTABLE_STR = frozenset({"PROXY_VN", "PROXY_US", "RATE_LIMIT_DEFAULT", "RATE_LIMIT_BURST"})
+
+_JSON_DICT_KEYS = frozenset({
+    "RATE_LIMITS",
+    "BURST_LIMITS",
+    "SERVICE_RATE_LIMITS",
+})
 
 
 def _normalize_proxy(p: str) -> str:
@@ -14,6 +23,18 @@ def _normalize_proxy(p: str) -> str:
         host, port, user, passwd = parts
         return f"http://{user}:{passwd}@{host}:{port}"
     return p
+
+
+def _apply_json_dict(settings, remote: dict, key: str, attr: str) -> None:
+    raw = remote.get(key)
+    if not raw:
+        return
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return
+    if isinstance(parsed, dict):
+        setattr(settings, attr, {**getattr(settings, attr), **parsed})
 
 
 async def load_and_apply() -> None:
@@ -47,13 +68,15 @@ async def load_and_apply() -> None:
         if remote.get(key):
             setattr(settings, key, remote[key])
 
+    for key in _JSON_DICT_KEYS:
+        _apply_json_dict(settings, remote, key, key)
+
     for key in ("PROXY_VN", "PROXY_US"):
         if remote.get(key):
             raw    = [p.strip() for p in remote[key].split(",") if p.strip()]
             parsed = [_normalize_proxy(p) for p in raw]
             setattr(settings, key, parsed)
 
-    # PROXY_LIST re-derive từ PROXY_VN
     vn = getattr(settings, "PROXY_VN", [])
     if vn:
         setattr(settings, "PROXY_LIST", vn)

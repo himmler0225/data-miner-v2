@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from typing import Optional
+import httpx
 from app.middleware import verify_api_key, limiter
 from app.crawlers.tiki.search import search_products
 from app.crawlers.tiki.sales import get_flash_sale
@@ -12,13 +13,23 @@ from app.config.urls import proxy_manager
 from app.config.logger import Logger
 from app.schemas.response import ApiResponse
 from app.utils import retry_on_failure
-from app.api.rate_limit_config import get_rate_limit
+from app.api.rate_limit_config import endpoint_limit
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
 
+
+def _raise_tiki_error(e: Exception) -> None:
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        if code == 404:
+            raise HTTPException(status_code=404, detail="Not found")
+        if 400 <= code < 500:
+            raise HTTPException(status_code=code, detail="Tiki API client error")
+    raise HTTPException(status_code=502, detail=str(e))
+
 @router.get("/products/search", summary="Search For Products")
-@limiter.limit(get_rate_limit("tiki"))
+@limiter.limit(endpoint_limit("tiki"))
 async def search_products_endpoint(
     request: Request,
     response: Response,
@@ -42,11 +53,13 @@ async def search_products_endpoint(
 
     try:
         return ApiResponse.ok(await _())
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_tiki_error(e)
 
 @router.get("/products/sales", summary="Flash Sale Tiki")
-@limiter.limit(get_rate_limit("tiki"))
+@limiter.limit(endpoint_limit("tiki"))
 async def get_flash_sales_endpoint(
     request: Request,
     response: Response,
@@ -60,11 +73,13 @@ async def get_flash_sales_endpoint(
 
     try:
         return ApiResponse.ok(await _())
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_tiki_error(e)
 
 @router.get("/products/top-choice", summary="Top Deals Tiki")
-@limiter.limit(get_rate_limit("tiki"))
+@limiter.limit(endpoint_limit("tiki"))
 async def get_top_choice_endpoint(
     request: Request,
     response: Response,
@@ -76,11 +91,13 @@ async def get_top_choice_endpoint(
 
     try:
         return ApiResponse.ok(await _())
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_tiki_error(e)
 
 @router.get("/products/maybe-you-like", summary="Tiki Recommend")
-@limiter.limit(get_rate_limit("tiki"))
+@limiter.limit(endpoint_limit("tiki"))
 async def get_maybe_you_like_endpoint(
     request: Request,
     response: Response,
@@ -92,11 +109,13 @@ async def get_maybe_you_like_endpoint(
 
     try:
         return ApiResponse.ok(await _())
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_tiki_error(e)
 
 @router.get("/products/{product_id}", summary="Tiki Product Detail")
-@limiter.limit(get_rate_limit("tiki"))
+@limiter.limit(endpoint_limit("tiki"))
 async def get_product_detail_endpoint(
     request: Request,
     response: Response,
@@ -110,11 +129,13 @@ async def get_product_detail_endpoint(
 
     try:
         return ApiResponse.ok(await _())
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_tiki_error(e)
 
 @router.get("/products/{product_id}/reviews", summary="Tiki Product Reviews")
-@limiter.limit(get_rate_limit("tiki"))
+@limiter.limit(endpoint_limit("tiki"))
 async def get_reviews_endpoint(
     request: Request,
     response: Response,
@@ -141,5 +162,7 @@ async def get_reviews_endpoint(
 
     try:
         return ApiResponse.ok(await _())
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_tiki_error(e)

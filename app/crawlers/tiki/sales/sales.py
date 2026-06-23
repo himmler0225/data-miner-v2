@@ -14,7 +14,9 @@ def extract_flash_sale_items(items: List[Dict]) -> List[Dict]:
             "deal_id":             item.get("deal_id"),
             "id":                  product.get("id"),
             "master_id":           product.get("master_id"),
+            "seller_product_id":   product.get("seller_product_id"),
             "name":                product.get("name"),
+            "short_name":          product.get("short_name") or product.get("name"),
             "url": (
                 f"https://tiki.vn/{product.get('url_path')}"
                 if product.get("url_path") else None

@@ -241,6 +241,8 @@ def retry_on_failure(max_retries=3, delay=1):
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
+                    if isinstance(e, httpx.HTTPStatusError) and 400 <= e.response.status_code < 500:
+                        raise
                     last_exception = e
                     # Rotate proxy on network/proxy errors so the next attempt uses a fresh IP
                     if isinstance(e, (httpx.ProxyError, httpx.ConnectError, httpx.RemoteProtocolError)):

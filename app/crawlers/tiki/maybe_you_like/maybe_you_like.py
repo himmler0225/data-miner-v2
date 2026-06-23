@@ -20,8 +20,12 @@ def extract_maybe_you_like_items(items: List[Dict]) -> List[Dict]:
         result.append({
             "id":                 item.get("id"),
             "sku":                item.get("sku"),
+            "seller_product_id":  item.get("seller_product_id"),
             "master_product_sku": item.get("master_product_sku"),
             "name":               item.get("name"),
+            "short_name":         item.get("short_name") or item.get("name"),
+            "brand":              item.get("brand_name"),
+            "seller":             item.get("seller_name"),
             "url":                f"https://tiki.vn/{item.get('url_path', '')}",
             "thumbnail":          item.get("thumbnail_url"),
             "price":              item.get("price"),
