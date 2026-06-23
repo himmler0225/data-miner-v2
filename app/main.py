@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-load_dotenv()  # Must be called before any import that reads env vars
+load_dotenv()
 
 import warnings
 warnings.filterwarnings("ignore", category=Warning, module="urllib3")
@@ -16,6 +16,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.api.youtube import router as youtube_router
 from app.api.tiki import router as tiki_router
 from app.api.tiktok import router as tiktok_router
+from app.api.fpt_shop import router as fpt_router
 from app.api.admin import router as admin_router
 from app.middleware import (
     LoggingMiddleware,
@@ -35,33 +36,28 @@ logger = Logger.get(__name__)
 async def lifespan(app: FastAPI):
     from app.config.remote import load_and_apply
     await load_and_apply()
-    logger.info("🚀 Data Miner API starting up...")
-    logger.info("Log level: %s", LOG_LEVEL)
-    logger.info("IP whitelist: %s", ENABLE_IP_WHITELIST)
-    logger.info("Rate limit: %s", RATE_LIMIT_DEFAULT)
-    logger.info("Scheduler disabled — demo mode")
+    logger.info("[startup] data-miner starting")
+    logger.info("[startup] log_level=%s whitelist=%s rate_limit=%s", LOG_LEVEL, ENABLE_IP_WHITELIST, RATE_LIMIT_DEFAULT)
 
-    # Warm the TikTok session pool (shared ttwid jars) + hourly refresher.
     pool_task = None
     try:
         from app.crawlers.tiktok.native import warm_session_pool, session_pool_refresher
         await warm_session_pool()
         pool_task = asyncio.create_task(session_pool_refresher())
-        logger.info("🟣 TikTok session pool ready + refresher started")
-    except Exception as e:
-        logger.warning("🔴 TikTok session pool failed to start: %s", e)
+        logger.info("[startup] tiktok session pool ready")
+    except Exception as exc:
+        logger.warning("[startup] tiktok session pool failed: %s", exc)
 
-    # Pre-warm YouTube visitorData (key is already seeded as a constant)
     try:
         from app.utils import warm_youtube_session
         asyncio.create_task(warm_youtube_session())
-        logger.info("🟡 YouTube session warm-up started in background")
-    except Exception as e:
-        logger.warning("YouTube session warm-up failed to start: %s", e)
+        logger.info("[startup] youtube session warmup scheduled")
+    except Exception as exc:
+        logger.warning("[startup] youtube session warmup failed: %s", exc)
 
     yield
 
-    logger.info("Data Miner API shutting down...")
+    logger.info("[shutdown] data-miner stopping")
     if pool_task:
         pool_task.cancel()
 
@@ -99,13 +95,12 @@ app.add_middleware(
 )
 
 app.add_middleware(IPWhitelistMiddleware)
-# Global rate limit (RATE_LIMIT_DEFAULT + RATE_LIMIT_BURST) on every endpoint.
-# Placed inside LoggingMiddleware so throttled requests are still logged.
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(ClientInfoMiddleware)
 app.include_router(youtube_router, prefix="/api", tags=["YouTube"])
 app.include_router(tiki_router, prefix="/api/tiki", tags=["Tiki"])
+app.include_router(fpt_router, prefix="/api/fpt-shop", tags=["FPT Shop"])
 app.include_router(tiktok_router, prefix="/api/tiktok", tags=["TikTok"])
 app.include_router(admin_router)
 

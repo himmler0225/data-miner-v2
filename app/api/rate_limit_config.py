@@ -10,6 +10,7 @@ RATE_LIMITS = {
     "location": "5/minute",
     "tiktok": "15/minute",
     "tiki": "15/minute",
+    "fptshop": "15/minute",
 }
 
 BURST_LIMITS = {
