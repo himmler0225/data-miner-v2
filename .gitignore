@@ -1,8 +1,7 @@
 # Environment variables
 .env
-.env.production
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -69,6 +68,10 @@ debug_*.json
 # Documentation builds
 docs/_build/
 site/
+
+# README nội bộ — chỉ /README.md ở root push GitHub
+**/README.md
+!/README.md
 
 # Node modules (for Prisma)
 node_modules/
