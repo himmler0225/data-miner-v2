@@ -1,3 +1,3 @@
-from .shorts import get_shorts_feed
+"""Shorts crawler package."""
 
-__all__ = ["get_shorts_feed"]
+__all__ = []

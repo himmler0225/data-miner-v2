@@ -1,11 +1,15 @@
 import base64
-from typing import List, Dict
+from typing import Dict, List
 
-from ....utils import get_youtube_api_key, get_context, create_httpx_client
-from ....config import get_youtube_headers, get_youtube_api_url
-from ....config.constants import ENDPOINT_BROWSE, CHANNEL_TAB_VIDEOS
+from app.config.constants import (CHANNEL_TAB_VIDEOS, ENDPOINT_BROWSE,
+                                  YOUTUBE_BASE_URL)
+from app.config.headers import get_youtube_headers
+from app.crawlers.youtube.client import (create_httpx_client, get_context,
+                                         get_youtube_api_key, get_youtube_api_url)
+
 from ....exceptions import YouTubeStructureChangedError
-from ..shared import join_runs
+from ..shared.parsers import join_runs
+
 
 def extract_video_items(items: List[Dict]) -> List[Dict]:
     videos = []
@@ -14,18 +18,23 @@ def extract_video_items(items: List[Dict]) -> List[Dict]:
         video = content.get("videoRenderer") or content.get("gridVideoRenderer")
         if not video:
             continue
-        videos.append({
-            "title": join_runs(video.get("title", {})),
-            "videoId": video.get("videoId"),
-            "url": f"https://www.youtube.com/watch?v={video.get('videoId')}",
-            "duration": video.get("lengthText", {}).get("simpleText", ""),
-            "views": video.get("viewCountText", {}).get("simpleText", ""),
-            "thumbnail": video.get("thumbnail", {}).get("thumbnails", []),
-            "public": video.get("publishedTimeText", {}).get("simpleText", ""),
-        })
+        videos.append(
+            {
+                "title": join_runs(video.get("title", {})),
+                "videoId": video.get("videoId"),
+                "url": f"{YOUTUBE_BASE_URL}/watch?v={video.get('videoId')}",
+                "duration": video.get("lengthText", {}).get("simpleText", ""),
+                "views": video.get("viewCountText", {}).get("simpleText", ""),
+                "thumbnail": video.get("thumbnail", {}).get("thumbnails", []),
+                "public": video.get("publishedTimeText", {}).get("simpleText", ""),
+            }
+        )
     return videos
 
-async def get_channel_videos(channel_id: str, proxy: str = None, max_results: int = 100) -> List[Dict]:
+
+async def get_channel_videos(
+    channel_id: str, proxy: str = None, max_results: int = 100
+) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
     headers = get_youtube_headers()
@@ -44,56 +53,117 @@ async def get_channel_videos(channel_id: str, proxy: str = None, max_results: in
         resp.raise_for_status()
         data = resp.json()
 
-        tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+        tabs = (
+            data.get("contents", {})
+            .get("twoColumnBrowseResultsRenderer", {})
+            .get("tabs", [])
+        )
         if not tabs:
             raise YouTubeStructureChangedError(
                 "twoColumnBrowseResultsRenderer.tabs not found for channel",
-                context={"channel_id": channel_id}
+                context={"channel_id": channel_id},
             )
 
-        videos_tab = next((tab for tab in tabs if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"), None)
+        videos_tab = next(
+            (
+                tab
+                for tab in tabs
+                if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"
+            ),
+            None,
+        )
         if videos_tab:
-            endpoint = videos_tab.get("tabRenderer", {}).get("endpoint", {}).get("browseEndpoint", {})
+            endpoint = (
+                videos_tab.get("tabRenderer", {})
+                .get("endpoint", {})
+                .get("browseEndpoint", {})
+            )
             browse_id = endpoint.get("browseId")
             params = endpoint.get("params")
-            payload = {"context": get_context(), "browseId": browse_id, "params": params}
+            payload = {
+                "context": get_context(),
+                "browseId": browse_id,
+                "params": params,
+            }
             resp = await client.post(browse_url, json=payload)
             resp.raise_for_status()
             data = resp.json()
-            tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-            videos_tab = next((tab for tab in tabs if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"), None)
+            tabs = (
+                data.get("contents", {})
+                .get("twoColumnBrowseResultsRenderer", {})
+                .get("tabs", [])
+            )
+            videos_tab = next(
+                (
+                    tab
+                    for tab in tabs
+                    if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"
+                ),
+                None,
+            )
 
         if not videos_tab:
-            videos_tab = next((tab for tab in tabs if tab.get("tabRenderer", {}).get("title", "").lower() == "home"), None)
+            videos_tab = next(
+                (
+                    tab
+                    for tab in tabs
+                    if tab.get("tabRenderer", {}).get("title", "").lower() == "home"
+                ),
+                None,
+            )
             if not videos_tab:
                 raise YouTubeStructureChangedError(
                     "Neither 'Videos' nor 'Home' tab found for channel",
-                    context={"channel_id": channel_id}
+                    context={"channel_id": channel_id},
                 )
 
         section = (
-            videos_tab.get("tabRenderer", {}).get("content", {})
-            .get("richGridRenderer", {}).get("contents", [])
+            videos_tab.get("tabRenderer", {})
+            .get("content", {})
+            .get("richGridRenderer", {})
+            .get("contents", [])
         )
         collected += extract_video_items(section)
-        continuation = next((
-            c.get("continuationItemRenderer", {}).get("continuationEndpoint", {}).get("continuationCommand", {}).get("token")
-            for c in section if "continuationItemRenderer" in c
-        ), None)
+        continuation = next(
+            (
+                c.get("continuationItemRenderer", {})
+                .get("continuationEndpoint", {})
+                .get("continuationCommand", {})
+                .get("token")
+                for c in section
+                if "continuationItemRenderer" in c
+            ),
+            None,
+        )
 
         while continuation and len(collected) < max_results:
             payload = {"context": get_context(), "continuation": continuation}
             resp = await client.post(browse_url, json=payload)
             resp.raise_for_status()
             data = resp.json()
-            commands = data.get("onResponseReceivedCommands") or data.get("onResponseReceivedActions") or []
+            commands = (
+                data.get("onResponseReceivedCommands")
+                or data.get("onResponseReceivedActions")
+                or []
+            )
             if not commands:
                 break
-            continuation_items = commands[0].get("appendContinuationItemsAction", {}).get("continuationItems", [])
+            continuation_items = (
+                commands[0]
+                .get("appendContinuationItemsAction", {})
+                .get("continuationItems", [])
+            )
             collected += extract_video_items(continuation_items)
-            continuation = next((
-                i.get("continuationItemRenderer", {}).get("continuationEndpoint", {}).get("continuationCommand", {}).get("token")
-                for i in continuation_items if "continuationItemRenderer" in i
-            ), None)
+            continuation = next(
+                (
+                    i.get("continuationItemRenderer", {})
+                    .get("continuationEndpoint", {})
+                    .get("continuationCommand", {})
+                    .get("token")
+                    for i in continuation_items
+                    if "continuationItemRenderer" in i
+                ),
+                None,
+            )
 
     return collected[:max_results]

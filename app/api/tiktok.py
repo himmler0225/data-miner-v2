@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from app.middleware import verify_api_key, limiter
+
 from app.api.rate_limit_config import endpoint_limit
-from app.crawlers.tiktok.native import search_native, trending_native
-from app.crawlers.tiktok import tikhub, cache as search_cache
 from app.config.logger import Logger
-from app.schemas.response import ApiResponse
+from app.crawlers.tiktok import cache as search_cache
+from app.crawlers.tiktok import tikhub
+from app.crawlers.tiktok.native import search_native, trending_native
 from app.exceptions import NativeSearchError, TikHubError
+from app.middleware import limiter, verify_api_key
+from app.schemas.response import ApiResponse
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
@@ -21,7 +23,9 @@ async def tiktok_search(
     cursor: int = Query(0, ge=0),
     region: str = Query("VN"),
     language: str = Query("vi"),
-    sort_by: str = Query(None, enum=["most-liked", "most-viewed", "most-recent", "most-relevant"]),
+    sort_by: str = Query(
+        None, enum=["most-liked", "most-viewed", "most-recent", "most-relevant"]
+    ),
 ):
     cache_key = (q.lower().strip(), count, cursor, region, sort_by)
 
@@ -32,7 +36,9 @@ async def tiktok_search(
 
     # 1. Native (free, reverse-engineered)
     try:
-        result = await search_native(keyword=q, count=count, cursor=cursor, region=region, language=language)
+        result = await search_native(
+            keyword=q, count=count, cursor=cursor, region=region, language=language
+        )
         if result.get("videos"):
             search_cache.put(cache_key, result)
             return ApiResponse.ok(result)
@@ -45,7 +51,9 @@ async def tiktok_search(
     # 2. TikHub fallback (paid, $0.001/call)
     try:
         sort_type = 1 if sort_by == "most-liked" else 0
-        raw = await tikhub.search_videos(keyword=q, cursor=cursor, count=count, sort_type=sort_type)
+        raw = await tikhub.search_videos(
+            keyword=q, cursor=cursor, count=count, sort_type=sort_type
+        )
         formatted = tikhub.format_search(raw)
         if formatted.get("videos"):
             search_cache.put(cache_key, formatted)
@@ -66,7 +74,9 @@ async def tiktok_trending(
     language: str = Query("vi"),
 ):
     try:
-        return ApiResponse.ok(await trending_native(count=count, region=region, language=language))
+        return ApiResponse.ok(
+            await trending_native(count=count, region=region, language=language)
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -96,12 +106,14 @@ async def tiktok_comments(
 ):
     try:
         raw = await tikhub.get_comments(aweme_id=aweme_id, cursor=cursor, count=count)
-        return ApiResponse.ok({
-            "aweme_id": aweme_id,
-            "comments": tikhub.format_comments(raw),
-            "has_more": (raw.get("data") or {}).get("has_more", False),
-            "cursor":   (raw.get("data") or {}).get("cursor", 0),
-        })
+        return ApiResponse.ok(
+            {
+                "aweme_id": aweme_id,
+                "comments": tikhub.format_comments(raw),
+                "has_more": (raw.get("data") or {}).get("has_more", False),
+                "cursor": (raw.get("data") or {}).get("cursor", 0),
+            }
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -130,7 +142,9 @@ async def tiktok_transcript(
         raw = await tikhub.get_transcript(aweme_id=aweme_id)
         fmt = tikhub.format_transcript(raw)
         if fmt is None:
-            return ApiResponse.ok({"aweme_id": aweme_id, "available": False, "text": None})
+            return ApiResponse.ok(
+                {"aweme_id": aweme_id, "available": False, "text": None}
+            )
         return ApiResponse.ok(fmt)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

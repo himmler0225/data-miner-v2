@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from hashlib import md5
 from time import time
+
 
 class Signer:
     shift_array = "Dkdpgh4ZKsQB80/Mfvw36XI1R25-WUAlEi7NLboqYTOPuzmFjJnryx9HVGcaStCe"

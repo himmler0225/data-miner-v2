@@ -3,8 +3,10 @@ TikTok Challenge/Hashtag Service
 """
 
 import sys
-from typing import Dict, Any
+from typing import Any, Dict
+
 from .base import TikTokBaseService
+
 
 class ChallengeService(TikTokBaseService):
     """TikTok Challenge/Hashtag Service"""
@@ -13,7 +15,7 @@ class ChallengeService(TikTokBaseService):
         self,
         challenge_id: str = "",
         challenge_name: str = "",
-        use_fresh_token: bool = True
+        use_fresh_token: bool = True,
     ) -> Dict[str, Any]:
         """
         Get TikTok challenge/hashtag detail
@@ -27,7 +29,9 @@ class ChallengeService(TikTokBaseService):
             Dict with success, data
         """
 
-        sys.stderr.write(f"\n#️⃣ Getting challenge: {challenge_name or challenge_id}...\n")
+        sys.stderr.write(
+            f"\n#️⃣ Getting challenge: {challenge_name or challenge_id}...\n"
+        )
         sys.stderr.flush()
 
         params = self._get_mobile_params()
@@ -39,29 +43,24 @@ class ChallengeService(TikTokBaseService):
         else:
             return {
                 "success": False,
-                "error": "Either challenge_id or challenge_name required"
+                "error": "Either challenge_id or challenge_name required",
             }
 
         data = self._make_request(
-            "/api/challenge/detail/",
-            params,
-            use_fresh_token=use_fresh_token
+            "/api/challenge/detail/", params, use_fresh_token=use_fresh_token
         )
 
         sys.stderr.write(f"  Response keys: {list(data.keys()) if data else 'None'}\n")
         sys.stderr.flush()
 
         if data and "challengeInfo" in data:
-            return {
-                "success": True,
-                "data": data["challengeInfo"]
-            }
+            return {"success": True, "data": data["challengeInfo"]}
 
         return {
             "success": False,
             "data": None,
             "error": "No challengeInfo in response",
-            "raw": data
+            "raw": data,
         }
 
     def get_challenge_videos(
@@ -69,7 +68,7 @@ class ChallengeService(TikTokBaseService):
         challenge_id: str,
         count: int = 20,
         cursor: int = 0,
-        use_fresh_token: bool = True
+        use_fresh_token: bool = True,
     ) -> Dict[str, Any]:
         """
         Get videos for a challenge/hashtag
@@ -89,16 +88,16 @@ class ChallengeService(TikTokBaseService):
 
         params = self._get_mobile_params()
 
-        params.update({
-            "challengeID": challenge_id,
-            "count": str(count),
-            "cursor": str(cursor),
-        })
+        params.update(
+            {
+                "challengeID": challenge_id,
+                "count": str(count),
+                "cursor": str(cursor),
+            }
+        )
 
         data = self._make_request(
-            "/api/challenge/item_list/",
-            params,
-            use_fresh_token=use_fresh_token
+            "/api/challenge/item_list/", params, use_fresh_token=use_fresh_token
         )
 
         if data and "itemList" in data:
@@ -107,7 +106,9 @@ class ChallengeService(TikTokBaseService):
             # Limit results to requested count
             if len(items) > count:
                 items = items[:count]
-                sys.stderr.write(f"  ⚠️ Trimmed {len(data['itemList'])} results to {count} as requested\n")
+                sys.stderr.write(
+                    f"  ⚠️ Trimmed {len(data['itemList'])} results to {count} as requested\n"
+                )
                 sys.stderr.flush()
 
             return {
@@ -115,11 +116,7 @@ class ChallengeService(TikTokBaseService):
                 "data": items,
                 "count": len(items),
                 "cursor": data.get("cursor", 0),
-                "hasMore": data.get("hasMore", False)
+                "hasMore": data.get("hasMore", False),
             }
 
-        return {
-            "success": False,
-            "data": [],
-            "error": "No itemList in response"
-        }
+        return {"success": False, "data": [], "error": "No itemList in response"}

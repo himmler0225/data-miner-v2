@@ -8,34 +8,36 @@ Usage:
 Setup (once, in main.py):
     Logger.setup(level="INFO")
 """
+
+import json
 import logging
 import logging.handlers
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-_RESET   = "\033[0m"
-_BOLD    = "\033[1m"
-_DIM     = "\033[2m"
-_BLUE    = "\033[34m"
+_RESET = "\033[0m"
+_BOLD = "\033[1m"
+_DIM = "\033[2m"
+_BLUE = "\033[34m"
 
 _LEVEL_COLOR = {
-    "DEBUG":    "\033[36m",
-    "INFO":     "\033[32m",
-    "WARNING":  "\033[33m",
-    "ERROR":    "\033[31m",
+    "DEBUG": "\033[36m",
+    "INFO": "\033[32m",
+    "WARNING": "\033[33m",
+    "ERROR": "\033[31m",
     "CRITICAL": "\033[35m\033[1m",
 }
 
+
 class _ColorFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        ts    = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
+        ts = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
         color = _LEVEL_COLOR.get(record.levelname, "\033[37m")
 
-        parts     = record.name.split(".")
-        short     = ".".join(parts[-2:]) if len(parts) >= 2 else record.name
-        msg       = record.getMessage()
+        parts = record.name.split(".")
+        short = ".".join(parts[-2:]) if len(parts) >= 2 else record.name
+        msg = record.getMessage()
         if record.levelno >= logging.WARNING:
             msg = f"{color}{msg}{_RESET}"
 
@@ -46,16 +48,17 @@ class _ColorFormatter(logging.Formatter):
             f"{msg}"
         )
 
+
 class _JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         data: Dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
-            "level":     record.levelname,
-            "logger":    record.name,
-            "message":   record.getMessage(),
-            "module":    record.module,
-            "function":  record.funcName,
-            "line":      record.lineno,
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
         }
         if record.exc_info:
             data["exception"] = self.formatException(record.exc_info)
@@ -63,17 +66,18 @@ class _JSONFormatter(logging.Formatter):
             data["extra"] = record.extra_data
         return json.dumps(data, ensure_ascii=False)
 
+
 class Logger:
 
-    _root:       str  = "data_miner"
+    _root: str = "data_miner"
     _configured: bool = False
 
     @classmethod
     def setup(
         cls,
-        level:        str = "INFO",
-        log_dir:      str = "logs",
-        max_bytes:    int = 10 * 1024 * 1024,
+        level: str = "INFO",
+        log_dir: str = "logs",
+        max_bytes: int = 10 * 1024 * 1024,
         backup_count: int = 5,
     ) -> None:
         if cls._configured:
@@ -96,7 +100,9 @@ class Logger:
         # app.log — JSON, rotating
         app_file = logging.handlers.RotatingFileHandler(
             log_path / "app.log",
-            maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8",
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
         )
         app_file.setLevel(logging.DEBUG)
         app_file.setFormatter(_JSONFormatter())
@@ -105,7 +111,9 @@ class Logger:
         # error.log — errors only
         err_file = logging.handlers.RotatingFileHandler(
             log_path / "error.log",
-            maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8",
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
         )
         err_file.setLevel(logging.ERROR)
         err_file.setFormatter(_JSONFormatter())

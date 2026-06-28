@@ -1,15 +1,20 @@
 import random
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
-from ....utils import get_youtube_api_key, get_visitor_data, get_client_version, create_httpx_client
-from ....config import get_youtube_headers, get_youtube_api_url
-from ....config.constants import ENDPOINT_SEARCH, CLIENT_NAME
-from ....exceptions import YouTubeStructureChangedError
+from app.config.constants import CLIENT_NAME, ENDPOINT_SEARCH
+from app.config.headers import get_youtube_headers
 from app.config.logger import Logger
-from ..shared import parse_video_renderer, extract_continuation_token, get_continuation_items
+from app.crawlers.youtube.client import (create_httpx_client, get_client_version,
+                                         get_visitor_data, get_youtube_api_key,
+                                         get_youtube_api_url)
+
+from ....exceptions import YouTubeStructureChangedError
+from ..shared.parsers import (extract_continuation_token, get_continuation_items,
+                              parse_video_renderer)
 from .location_constants import _GL_TIMEZONE
 
 logger = Logger.get(__name__)
+
 
 def _get_region_context(gl: str, hl: str) -> dict:
     """InnerTube context with overridden gl/hl for geographic targeting."""
@@ -31,8 +36,13 @@ def _get_region_context(gl: str, hl: str) -> dict:
     return {
         "client": client,
         "user": {"lockedSafetyMode": False},
-        "request": {"useSsl": True, "internalExperimentFlags": [], "consistencyTokenJars": []},
+        "request": {
+            "useSsl": True,
+            "internalExperimentFlags": [],
+            "consistencyTokenJars": [],
+        },
     }
+
 
 def _extract_videos(items: List[Dict]) -> List[Dict]:
     results = []
@@ -45,6 +55,7 @@ def _extract_videos(items: List[Dict]) -> List[Dict]:
             continue
         results.append(parse_video_renderer(video))
     return results
+
 
 async def get_videos_by_region(
     gl: str,
@@ -75,24 +86,36 @@ async def get_videos_by_region(
         if not section_contents:
             raise YouTubeStructureChangedError(
                 "sectionListRenderer.contents not found in region search response",
-                context={"gl": gl, "query": query, "top_keys": list(data.get("contents", {}).keys())},
+                context={
+                    "gl": gl,
+                    "query": query,
+                    "top_keys": list(data.get("contents", {}).keys()),
+                },
             )
 
         continuation = None
         for section in section_contents:
             if "itemSectionRenderer" in section:
-                collected.extend(_extract_videos(section["itemSectionRenderer"].get("contents", [])))
+                collected.extend(
+                    _extract_videos(section["itemSectionRenderer"].get("contents", []))
+                )
             if "continuationItemRenderer" in section:
                 continuation = extract_continuation_token(section)
 
         while continuation and len(collected) < max_results:
-            resp = await client.post(search_url, json={"context": context, "continuation": continuation})
+            resp = await client.post(
+                search_url, json={"context": context, "continuation": continuation}
+            )
             resp.raise_for_status()
             data = resp.json()
             continuation = None
             for section in get_continuation_items(data):
                 if "itemSectionRenderer" in section:
-                    collected.extend(_extract_videos(section["itemSectionRenderer"].get("contents", [])))
+                    collected.extend(
+                        _extract_videos(
+                            section["itemSectionRenderer"].get("contents", [])
+                        )
+                    )
                 if "continuationItemRenderer" in section:
                     continuation = extract_continuation_token(section)
 

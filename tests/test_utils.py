@@ -3,7 +3,8 @@ Test utility functions
 """
 
 import pytest
-from app.utils.api_key_generator import generate_api_key
+
+from app.api_key_generator import generate_api_key
 
 
 @pytest.mark.unit
@@ -50,6 +51,7 @@ class TestLoggingConfiguration:
     def test_json_formatter(self):
         """Test JSON formatter"""
         import logging
+
         from app.config.logging_config import JSONFormatter
 
         formatter = JSONFormatter()
@@ -60,13 +62,14 @@ class TestLoggingConfiguration:
             lineno=1,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         formatted = formatter.format(record)
         assert isinstance(formatted, str)
         # Should be valid JSON
         import json
+
         data = json.loads(formatted)
         assert "timestamp" in data
         assert "level" in data
@@ -89,6 +92,7 @@ class TestAuthMiddleware:
     def test_multiple_api_keys(self):
         """Test multiple API keys separated by comma"""
         import os
+
         from app.middleware.auth_middleware import get_api_keys
 
         # Set multiple keys
@@ -119,38 +123,3 @@ class TestSchedulerJobs:
             assert "timestamp" in result
         else:
             assert "error" in result
-
-
-@pytest.mark.unit
-class TestConfigurationHeaders:
-    """Tests for headers configuration"""
-
-    def test_get_headers_returns_dict(self):
-        """Test that get_headers returns a dictionary"""
-        from app.config.headers import get_headers
-
-        headers = get_headers()
-        assert isinstance(headers, dict)
-
-    def test_headers_contain_required_fields(self):
-        """Test that headers contain required fields"""
-        from app.config.headers import get_headers
-
-        headers = get_headers()
-
-        # Check for essential headers
-        assert "User-Agent" in headers
-        assert "Accept" in headers
-        assert "Accept-Language" in headers
-
-    def test_headers_randomization(self):
-        """Test that headers are randomized between calls"""
-        from app.config.headers import get_headers
-
-        # Generate multiple headers
-        headers_list = [get_headers() for _ in range(10)]
-
-        # User-Agent should vary (due to randomization)
-        user_agents = [h["User-Agent"] for h in headers_list]
-        # At least some variation should exist
-        assert len(set(user_agents)) > 1

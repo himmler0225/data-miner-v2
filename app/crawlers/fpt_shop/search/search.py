@@ -1,20 +1,14 @@
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import httpx
 
 from app.config.logger import Logger
 
+from ..shared import build_headers
+
 logger = Logger.get(__name__)
 
 SEARCH_URL = "https://papi.fptshop.com.vn/gw/v1/public/fulltext-search-service/search"
-
-SEARCH_HEADERS = {
-    "accept": "application/json",
-    "content-type": "application/json",
-    "origin": "https://fptshop.com.vn",
-    "referer": "https://fptshop.com.vn/",
-    "order-channel": "1",
-}
 
 
 def extract_products(items: List[Dict]) -> List[Dict]:
@@ -52,34 +46,36 @@ def extract_products(items: List[Dict]) -> List[Dict]:
             promo.get("content") for promo in promotions if promo.get("content")
         ]
 
-        result.append({
-            "code": item.get("code"),
-            "sku": item.get("sku"),
-            "name": item.get("name") or item.get("displayName"),
-            "short_name": item.get("displayName"),
-            "slug": item.get("slug"),
-            "url": f"https://fptshop.com.vn/{item.get('slug', '')}",
-            "thumbnail": thumbnail,
-            "price": price,
-            "original_price": original_price,
-            "discount_percentage": discount_percentage,
-            "brand": brand,
-            "category": industry,
-            "key_selling_points": [
-                {
-                    "title": point.get("title"),
-                    "description": point.get("description"),
-                    "icon": point.get("icon"),
-                }
-                for point in (item.get("keySellingPoints") or [])
-            ],
-            "variants": variant_info,
-            "promotions": promo_texts,
-            "status": (item.get("statusOnWeb") or {}).get("displayName"),
-            "product_status": (item.get("productStatus") or {}).get("displayName"),
-            "installment": item.get("installment"),
-            "stock": item.get("qtyAvailable", 0),
-        })
+        result.append(
+            {
+                "code": item.get("code"),
+                "sku": item.get("sku"),
+                "name": item.get("name") or item.get("displayName"),
+                "short_name": item.get("displayName"),
+                "slug": item.get("slug"),
+                "url": f"https://fptshop.com.vn/{item.get('slug', '')}",
+                "thumbnail": thumbnail,
+                "price": price,
+                "original_price": original_price,
+                "discount_percentage": discount_percentage,
+                "brand": brand,
+                "category": industry,
+                "key_selling_points": [
+                    {
+                        "title": point.get("title"),
+                        "description": point.get("description"),
+                        "icon": point.get("icon"),
+                    }
+                    for point in (item.get("keySellingPoints") or [])
+                ],
+                "variants": variant_info,
+                "promotions": promo_texts,
+                "status": (item.get("statusOnWeb") or {}).get("displayName"),
+                "product_status": (item.get("productStatus") or {}).get("displayName"),
+                "installment": item.get("installment"),
+                "stock": item.get("qtyAvailable", 0),
+            }
+        )
 
     return result
 
@@ -121,7 +117,7 @@ async def search_products(
         payload["filter"] = filter_payload
 
     async with httpx.AsyncClient(proxy=proxy, timeout=30) as client:
-        resp = await client.post(SEARCH_URL, json=payload, headers=SEARCH_HEADERS)
+        resp = await client.post(SEARCH_URL, json=payload, headers=build_headers())
         logger.info("[fptshop/search] POST %s status=%s", resp.url, resp.status_code)
         resp.raise_for_status()
         data = resp.json()

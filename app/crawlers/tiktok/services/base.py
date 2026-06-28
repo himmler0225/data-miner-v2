@@ -1,14 +1,14 @@
-
-import time
+import json
 import random
 import string
-import requests
-import json
-from typing import Dict, Any
+import time
+from typing import Any, Dict
 from urllib.parse import urlencode, urlparse
 
+import requests
 # Import signature generators (path resolved by native.py via sys.path)
 from lib.signatures import Signer, get_X_Gnarly
+
 
 class TikTokBaseService:
 
@@ -16,8 +16,13 @@ class TikTokBaseService:
     MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
     PC_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
 
-    def __init__(self, region: str = "VN", language: str = "vi", proxies: dict = None,
-                 session: "requests.Session" = None):
+    def __init__(
+        self,
+        region: str = "VN",
+        language: str = "vi",
+        proxies: dict = None,
+        session: "requests.Session" = None,
+    ):
         self.region = region
         self.language = language
         self.proxies = proxies
@@ -31,19 +36,19 @@ class TikTokBaseService:
 
     def _generate_fake_mstoken(self, length: int = 107) -> str:
         chars = string.ascii_letters + string.digits + "_-"
-        return ''.join(random.choice(chars) for _ in range(length))
+        return "".join(random.choice(chars) for _ in range(length))
 
     def _generate_device_id(self) -> str:
-        if not hasattr(self, '_device_id'):
-            first_digit = '7'
-            rest_digits = ''.join(random.choice(string.digits) for _ in range(18))
+        if not hasattr(self, "_device_id"):
+            first_digit = "7"
+            rest_digits = "".join(random.choice(string.digits) for _ in range(18))
             self._device_id = first_digit + rest_digits
         return self._device_id
 
     def _generate_odin_id(self) -> str:
-        if not hasattr(self, '_odin_id'):
-            first_digit = '7'
-            rest_digits = ''.join(random.choice(string.digits) for _ in range(18))
+        if not hasattr(self, "_odin_id"):
+            first_digit = "7"
+            rest_digits = "".join(random.choice(string.digits) for _ in range(18))
             self._odin_id = first_digit + rest_digits
         return self._odin_id
 
@@ -73,13 +78,13 @@ class TikTokBaseService:
                 "client_params_x": {
                     "search_engine": {
                         "ies_mt_user_live_video_card_use_libra": 1,
-                        "mt_search_general_user_live_card": 1
+                        "mt_search_general_user_live_card": 1,
                     }
                 },
-                "search_server": {}
+                "search_server": {},
             }
         }
-        return json.dumps(search_code, separators=(',', ':'))
+        return json.dumps(search_code, separators=(",", ":"))
 
     def get_fresh_mstoken(self) -> str:
         try:
@@ -92,21 +97,20 @@ class TikTokBaseService:
             }
 
             response = self.session.get(
-                self.BASE_URL,
-                headers=headers,
-                timeout=10,
-                allow_redirects=True
+                self.BASE_URL, headers=headers, timeout=10, allow_redirects=True
             )
 
-            if 'Set-Cookie' in response.headers:
-                set_cookie = response.headers['Set-Cookie']
-                for cookie_part in set_cookie.split(';'):
-                    if 'msToken=' in cookie_part:
-                        ms_token = cookie_part.split('msToken=')[1].split(';')[0].strip()
+            if "Set-Cookie" in response.headers:
+                set_cookie = response.headers["Set-Cookie"]
+                for cookie_part in set_cookie.split(";"):
+                    if "msToken=" in cookie_part:
+                        ms_token = (
+                            cookie_part.split("msToken=")[1].split(";")[0].strip()
+                        )
                         return ms_token
 
-            if 'msToken' in self.session.cookies:
-                ms_token = self.session.cookies['msToken']
+            if "msToken" in self.session.cookies:
+                ms_token = self.session.cookies["msToken"]
                 return ms_token
 
             return self._generate_fake_mstoken()
@@ -232,21 +236,18 @@ class TikTokBaseService:
         query_string = parsed.query
 
         signed_params = Signer.sign(query_string, user_agent)
-        xbogus = signed_params.split("X-Bogus=")[-1] if "X-Bogus=" in signed_params else ""
+        xbogus = (
+            signed_params.split("X-Bogus=")[-1] if "X-Bogus=" in signed_params else ""
+        )
 
         xgnarly = get_X_Gnarly(
-            query_string=query_string,
-            request_body="",
-            user_agent=user_agent
+            query_string=query_string, request_body="", user_agent=user_agent
         )
 
         if xgnarly:
             xgnarly = xgnarly.strip()
 
-        return {
-            "xbogus": xbogus,
-            "xgnarly": xgnarly
-        }
+        return {"xbogus": xbogus, "xgnarly": xgnarly}
 
     def _make_request(
         self,
@@ -255,7 +256,7 @@ class TikTokBaseService:
         use_fresh_token: bool = True,
         delay_before_request: float = 1.5,
         user_agent: str = None,
-        proxies: Dict[str, str] = None
+        proxies: Dict[str, str] = None,
     ) -> Dict[str, Any]:
         if user_agent is None:
             user_agent = self.MOBILE_UA
@@ -293,7 +294,9 @@ class TikTokBaseService:
         }
 
         try:
-            response = self.session.get(signed_url, headers=headers, proxies=proxies, timeout=15)
+            response = self.session.get(
+                signed_url, headers=headers, proxies=proxies, timeout=15
+            )
 
             if response.status_code != 200 or len(response.content) == 0:
                 return {}
@@ -303,8 +306,9 @@ class TikTokBaseService:
             except Exception:
                 try:
                     import brotli
+
                     decompressed = brotli.decompress(response.content)
-                    data = json.loads(decompressed.decode('utf-8'))
+                    data = json.loads(decompressed.decode("utf-8"))
                 except Exception:
                     return {}
 

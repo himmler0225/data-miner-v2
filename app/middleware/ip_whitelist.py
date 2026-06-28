@@ -1,15 +1,16 @@
 import json
-import os  # needed for dynamic SERVICE_TOKEN_{name} lookups
-from typing import Set, Optional
-from starlette.types import ASGIApp, Scope, Receive, Send
+import os 
+from typing import Optional, Set
+
+from starlette.types import ASGIApp, Receive, Scope, Send
+
 from app.config.logger import Logger
-from app.config.settings import (
-    APP_ENV, ENABLE_IP_WHITELIST,
-    WHITELISTED_IPS as _IPS_LIST,
-    WHITELISTED_SERVICES as _SVC_LIST,
-)
+from app.config.settings import APP_ENV, ENABLE_IP_WHITELIST
+from app.config.settings import WHITELISTED_IPS as _IPS_LIST
+from app.config.settings import WHITELISTED_SERVICES as _SVC_LIST
 
 logger = Logger.get(__name__)
+
 
 def _build_ip_set() -> Set[str]:
     ips = set(_IPS_LIST)
@@ -21,9 +22,11 @@ def _build_ip_set() -> Set[str]:
     logger.info("Loaded %s whitelisted IPs", len(ips))
     return ips
 
-WHITELISTED_IPS      = _build_ip_set()
+
+WHITELISTED_IPS = _build_ip_set()
 WHITELISTED_SERVICES = set(_SVC_LIST)
-WHITELIST_ENABLED    = ENABLE_IP_WHITELIST
+WHITELIST_ENABLED = ENABLE_IP_WHITELIST
+
 
 def is_ip_whitelisted(ip: str) -> bool:
     if not WHITELISTED_IPS:
@@ -31,11 +34,13 @@ def is_ip_whitelisted(ip: str) -> bool:
 
     return ip in WHITELISTED_IPS
 
+
 def is_service_whitelisted(service_name: Optional[str]) -> bool:
     if not WHITELISTED_SERVICES or not service_name:
         return False
 
     return service_name in WHITELISTED_SERVICES
+
 
 def _get_client_ip_from_scope(scope: Scope, headers: dict) -> str:
     forwarded_for = headers.get(b"x-forwarded-for", b"").decode()
@@ -52,17 +57,23 @@ def _get_client_ip_from_scope(scope: Scope, headers: dict) -> str:
 
     return "unknown"
 
+
 async def _send_403(send: Send) -> None:
-    body = json.dumps({"detail": "Access denied: IP address or service not whitelisted"}).encode()
-    await send({
-        "type": "http.response.start",
-        "status": 403,
-        "headers": [
-            [b"content-type", b"application/json"],
-            [b"content-length", str(len(body)).encode()],
-        ],
-    })
+    body = json.dumps(
+        {"detail": "Access denied: IP address or service not whitelisted"}
+    ).encode()
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 403,
+            "headers": [
+                [b"content-type", b"application/json"],
+                [b"content-length", str(len(body)).encode()],
+            ],
+        }
+    )
     await send({"type": "http.response.body", "body": body, "more_body": False})
+
 
 class IPWhitelistMiddleware:
     def __init__(self, app: ASGIApp) -> None:
@@ -89,7 +100,11 @@ class IPWhitelistMiddleware:
 
         if service_name and service_token:
             expected_token = os.getenv(f"SERVICE_TOKEN_{service_name.upper()}")
-            if expected_token and service_token == expected_token and is_service_whitelisted(service_name):
+            if (
+                expected_token
+                and service_token == expected_token
+                and is_service_whitelisted(service_name)
+            ):
                 logger.debug("Request from whitelisted service: %s", service_name)
                 await self.app(scope, receive, send)
                 return

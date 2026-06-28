@@ -1,5 +1,3 @@
-"""Chặn gọi trực tiếp Tiki/FPT — chỉ BFF (ai-chatbot) có token mới qua."""
-
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config.logger import Logger
@@ -12,15 +10,19 @@ BFF_HEADER = b"x-rm-bff"
 
 
 def _is_guarded_path(path: str) -> bool:
-    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in BFF_GUARD_PREFIXES)
+    return any(
+        path == prefix or path.startswith(f"{prefix}/") for prefix in BFF_GUARD_PREFIXES
+    )
 
 
 async def _send_404(send: Send) -> None:
-    await send({
-        "type": "http.response.start",
-        "status": 404,
-        "headers": [[b"content-length", b"0"], [b"cache-control", b"no-store"]],
-    })
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 404,
+            "headers": [[b"content-length", b"0"], [b"cache-control", b"no-store"]],
+        }
+    )
     await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
@@ -39,7 +41,9 @@ class BffGuardMiddleware:
             return
 
         if not BFF_CLIENT_TOKEN:
-            logger.warning("BFF_GUARD_ENABLED but BFF_CLIENT_TOKEN missing — skipping guard")
+            logger.warning(
+                "BFF_GUARD_ENABLED but BFF_CLIENT_TOKEN missing — skipping guard"
+            )
             await self.app(scope, receive, send)
             return
 
@@ -53,9 +57,12 @@ class BffGuardMiddleware:
             return
 
         if token != BFF_CLIENT_TOKEN:
-            logger.warning("Blocked unauthenticated BFF access", extra={
-                "extra_data": {"path": path, "method": scope.get("method", "")},
-            })
+            logger.warning(
+                "Blocked unauthenticated BFF access",
+                extra={
+                    "extra_data": {"path": path, "method": scope.get("method", "")},
+                },
+            )
             await _send_404(send)
             return
 

@@ -1,8 +1,9 @@
 from typing import Dict
 
-from ....utils import get_youtube_api_key, get_context, create_httpx_client
-from ....config import get_youtube_api_url
-from ....config.constants import ENDPOINT_BROWSE
+from app.config.constants import ENDPOINT_BROWSE
+from app.crawlers.youtube.client import (create_httpx_client, get_context,
+                                         get_youtube_api_key, get_youtube_api_url)
+
 
 def parse_channel_info(data) -> Dict:
     header = data.get("header", {}).get("pageHeaderRenderer", {})
@@ -18,9 +19,12 @@ def parse_channel_info(data) -> Dict:
     banner = None
     try:
         banner_sources = (
-            data.get("header", {}).get("pageHeaderRenderer", {})
-            .get("banner", {}).get("imageBannerViewModel", {})
-            .get("image", {}).get("sources", [])
+            data.get("header", {})
+            .get("pageHeaderRenderer", {})
+            .get("banner", {})
+            .get("imageBannerViewModel", {})
+            .get("image", {})
+            .get("sources", [])
         )
         banner = banner_sources[-1]["url"] if banner_sources else None
     except Exception:
@@ -29,7 +33,9 @@ def parse_channel_info(data) -> Dict:
     handle = None
     subscribers = None
     try:
-        metadata_rows = header["content"]["pageHeaderViewModel"]["metadata"]["contentMetadataViewModel"]["metadataRows"]
+        metadata_rows = header["content"]["pageHeaderViewModel"]["metadata"][
+            "contentMetadataViewModel"
+        ]["metadataRows"]
         for row in metadata_rows:
             for part in row.get("metadataParts", []):
                 text = part.get("text", {}).get("content", "")
@@ -49,6 +55,7 @@ def parse_channel_info(data) -> Dict:
         "subscriber_count": subscribers,
         "description": metadata.get("description", ""),
     }
+
 
 async def get_channel_info(channel_id: str, proxy: str = None) -> Dict:
     api_key = await get_youtube_api_key(proxy=proxy)

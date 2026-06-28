@@ -1,13 +1,16 @@
 import json
 from typing import Optional
 
-from ....utils import create_httpx_client, get_youtube_api_key, get_context, parse_view_count
-from ....config import get_youtube_headers, get_youtube_api_url
-from ....config.constants import ENDPOINT_PLAYER, CLIENT_HL, CLIENT_GL
+from app.config.constants import (CLIENT_GL, CLIENT_HL, ENDPOINT_PLAYER,
+                                  YOUTUBE_BASE_URL)
+from app.config.headers import get_youtube_headers
 from app.config.logger import Logger
-from .detail_constants import YOUTUBE_WATCH_URL
+from app.crawlers.youtube.client import (create_httpx_client, get_context,
+                                         get_youtube_api_key, get_youtube_api_url)
+from app.crawlers.youtube.utils import parse_view_count
 
 logger = Logger.get(__name__)
+
 
 def _extract_player_response(html: str) -> Optional[dict]:
     """
@@ -29,24 +32,30 @@ def _extract_player_response(html: str) -> Optional[dict]:
             depth -= 1
             if depth == 0:
                 try:
-                    return json.loads(html[start: i + 1])
+                    return json.loads(html[start : i + 1])
                 except json.JSONDecodeError:
                     return None
     return None
+
 
 async def _get_via_watch_page(video_id: str, proxy: str = None) -> Optional[dict]:
     headers = get_youtube_headers()
     params = {"v": video_id, "hl": CLIENT_HL, "gl": CLIENT_GL}
     async with create_httpx_client(proxy=proxy, headers=headers, timeout=15) as client:
-        resp = await client.get(YOUTUBE_WATCH_URL, params=params)
+        resp = await client.get(f"{YOUTUBE_BASE_URL}/watch", params=params)
     if resp.status_code != 200:
-        logger.warning("🔴 [detail] watch_page HTTP %s for %s", resp.status_code, video_id)
+        logger.warning(
+            "🔴 [detail] watch_page HTTP %s for %s", resp.status_code, video_id
+        )
         return None
     data = _extract_player_response(resp.text)
     if not data:
-        logger.warning("🔴 [detail] watch_page: ytInitialPlayerResponse not found for %s", video_id)
+        logger.warning(
+            "🔴 [detail] watch_page: ytInitialPlayerResponse not found for %s", video_id
+        )
         return None
     return data
+
 
 async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
     try:
@@ -69,11 +78,16 @@ async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
         return None
     return resp.json()
 
+
 def _parse_player_response(data: dict, video_id: str) -> dict:
     status = data.get("playabilityStatus", {})
     yt_status = status.get("status")
     if yt_status != "OK":
-        return {"error": True, "reason": status.get("reason", "Unavailable"), "status": yt_status}
+        return {
+            "error": True,
+            "reason": status.get("reason", "Unavailable"),
+            "status": yt_status,
+        }
 
     video_details = data.get("videoDetails", {})
     streaming_data = data.get("streamingData", {})
@@ -105,20 +119,30 @@ def _parse_player_response(data: dict, video_id: str) -> dict:
         "publish_date": microformat.get("publishDate", ""),
     }
 
+
 async def get_video_detail(video_id: str, proxy: str = None) -> dict:
-    # Watch page is the reliable source — the player API returns UNPLAYABLE
-    # without a PoToken, so it's only a last-resort fallback.
     data = await _get_via_watch_page(video_id, proxy=proxy)
-    result = _parse_player_response(data, video_id) if data else {"error": True, "status": None}
+    result = (
+        _parse_player_response(data, video_id)
+        if data
+        else {"error": True, "status": None}
+    )
 
     if result.get("error"):
-        logger.info("🟡 [detail] watch_page blocked, trying API%s, trying player API for %s",
-                    result.get("status"), video_id)
+        logger.info(
+            "🟡 [detail] watch_page blocked, trying API%s, trying player API for %s",
+            result.get("status"),
+            video_id,
+        )
         api_data = await _get_via_api(video_id, proxy=proxy)
         if api_data:
             result = _parse_player_response(api_data, video_id)
 
     if result.get("error"):
-        logger.warning("🔴 [detail] both methods failed for %s (status=%s)", video_id, result.get("status"))
+        logger.warning(
+            "🔴 [detail] both methods failed for %s (status=%s)",
+            video_id,
+            result.get("status"),
+        )
 
     return result

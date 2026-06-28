@@ -1,11 +1,16 @@
 from typing import Dict, List, Optional
 
+from app.config.constants import YOUTUBE_BASE_URL
+from app.crawlers.youtube.utils import parse_view_count
+
+
 def join_runs(node: dict) -> str:
     """Concatenate all `runs[].text` — YouTube splits text at styled/bolded spans."""
     runs = node.get("runs") if isinstance(node, dict) else None
     if runs:
         return "".join(r.get("text", "") for r in runs)
     return node.get("simpleText", "") if isinstance(node, dict) else ""
+
 
 def get_channel_id_from_owner(video: dict) -> Optional[str]:
     owner_runs = video.get("ownerText", {}).get("runs", [{}])
@@ -16,6 +21,7 @@ def get_channel_id_from_owner(video: dict) -> Optional[str]:
         .get("browseId")
     )
 
+
 def extract_continuation_token(item: dict) -> Optional[str]:
     return (
         item.get("continuationItemRenderer", {})
@@ -24,6 +30,7 @@ def extract_continuation_token(item: dict) -> Optional[str]:
         .get("token")
     )
 
+
 def get_continuation_items(data: dict) -> List[dict]:
     commands = (
         data.get("onResponseReceivedCommands")
@@ -31,17 +38,20 @@ def get_continuation_items(data: dict) -> List[dict]:
         or []
     )
     return (
-        commands[0]
-        .get("appendContinuationItemsAction", {})
-        .get("continuationItems", [])
-    ) if commands else []
+        (
+            commands[0]
+            .get("appendContinuationItemsAction", {})
+            .get("continuationItems", [])
+        )
+        if commands
+        else []
+    )
+
 
 def parse_video_renderer(video: dict) -> Dict:
-    from ....utils import parse_view_count
-    views_raw = (
-        video.get("viewCountText", {}).get("simpleText", "")
-        or video.get("shortViewCountText", {}).get("simpleText", "")
-    )
+    views_raw = video.get("viewCountText", {}).get("simpleText", "") or video.get(
+        "shortViewCountText", {}
+    ).get("simpleText", "")
     video_id = video.get("videoId")
     return {
         "video_id": video_id,
@@ -52,5 +62,5 @@ def parse_video_renderer(video: dict) -> Dict:
         "duration": video.get("lengthText", {}).get("simpleText", ""),
         "published_time": video.get("publishedTimeText", {}).get("simpleText", ""),
         "thumbnails": video.get("thumbnail", {}).get("thumbnails", []),
-        "url": f"https://www.youtube.com/watch?v={video_id}",
+        "url": f"{YOUTUBE_BASE_URL}/watch?v={video_id}",
     }

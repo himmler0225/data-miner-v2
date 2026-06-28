@@ -1,3 +1,3 @@
-from .search import search_youtube
+"""Search crawler package."""
 
-__all__ = ["search_youtube"]
+__all__ = []

@@ -1,3 +1,3 @@
-from .channel import get_channel_videos
+"""Channel crawler package."""
 
-__all__ = ["get_channel_videos"]
+__all__ = []

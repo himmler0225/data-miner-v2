@@ -1,12 +1,15 @@
-from app.config.logger import Logger
 from typing import Dict, List, Optional
 
-from ....utils import get_youtube_api_key, get_context, create_httpx_client
-from ....config import get_youtube_headers, get_youtube_api_url
-from ....config.constants import ENDPOINT_BROWSE
+from app.config.constants import ENDPOINT_BROWSE
+from app.config.headers import get_youtube_headers
+from app.config.logger import Logger
+from app.crawlers.youtube.client import (create_httpx_client, get_context,
+                                         get_youtube_api_key, get_youtube_api_url)
+
 from ..playlist.playlist import get_videos_from_playlist
 
 logger = Logger.get(__name__)
+
 
 def _extract_playlist_ids(data: Dict) -> List[Dict]:
     playlists = []
@@ -17,19 +20,35 @@ def _extract_playlist_ids(data: Dict) -> List[Dict]:
     )
     for tab in tabs:
         renderer = tab.get("tabRenderer", {})
-        content  = renderer.get("content", {})
-        grid     = content.get("richGridRenderer", {})
+        content = renderer.get("content", {})
+        grid = content.get("richGridRenderer", {})
         sections = grid.get("contents", [])
         for sec in sections:
-            shelf = sec.get("richSectionRenderer", {}).get("content", {}).get("richShelfRenderer", {})
+            shelf = (
+                sec.get("richSectionRenderer", {})
+                .get("content", {})
+                .get("richShelfRenderer", {})
+            )
             shelf_title = shelf.get("title", {}).get("simpleText", "")
             for item in shelf.get("contents", []):
-                lockup = item.get("richItemRenderer", {}).get("content", {}).get("lockupViewModel", {})
-                pid    = lockup.get("contentId", "")
-                title  = lockup.get("metadata", {}).get("lockupMetadataViewModel", {}).get("title", {}).get("content", "")
+                lockup = (
+                    item.get("richItemRenderer", {})
+                    .get("content", {})
+                    .get("lockupViewModel", {})
+                )
+                pid = lockup.get("contentId", "")
+                title = (
+                    lockup.get("metadata", {})
+                    .get("lockupMetadataViewModel", {})
+                    .get("title", {})
+                    .get("content", "")
+                )
                 if pid and pid.startswith("RDCLAK"):  # music radio playlist ID prefix
-                    playlists.append({"playlist_id": pid, "title": title, "shelf": shelf_title})
+                    playlists.append(
+                        {"playlist_id": pid, "title": title, "shelf": shelf_title}
+                    )
     return playlists
+
 
 async def browse_topic_channel(
     channel_id: str,
@@ -38,7 +57,7 @@ async def browse_topic_channel(
 ) -> Dict:
     api_key = await get_youtube_api_key(proxy=proxy)
     headers = get_youtube_headers()
-    url     = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
+    url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
     context = get_context()
     context["client"]["gl"] = "VN"
     context["client"]["hl"] = "vi"
@@ -62,12 +81,14 @@ async def browse_topic_channel(
         videos = await get_videos_from_playlist(top["playlist_id"], proxy=proxy)
         logger.info("🟢 [topic] playlist=%s videos=%d", top["playlist_id"], len(videos))
     except Exception as e:
-        logger.warning("🔴 [topic] failed to fetch playlist %s: %s", top["playlist_id"], e)
+        logger.warning(
+            "🔴 [topic] failed to fetch playlist %s: %s", top["playlist_id"], e
+        )
         videos = []
 
     return {
-        "channel_id":        channel_id,
-        "playlists":         playlists[:5],
+        "channel_id": channel_id,
+        "playlists": playlists[:5],
         "featured_playlist": top,
-        "videos":            videos[:max_videos],
+        "videos": videos[:max_videos],
     }

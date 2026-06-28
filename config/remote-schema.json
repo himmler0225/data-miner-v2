@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "keys": {
+    "PROXY_POOLS": {
+      "bind": { "type": "proxy_pools", "module": "settings" },
+      "store": "proxy_pools"
+    },
+    "RATE_LIMIT": {
+      "bind": { "type": "rate_limit_full", "module": "settings" },
+      "store": "rate_limit"
+    }
+  },
+  "required": [],
+  "admin": {
+    "groups": {
+      "miner": ["PROXY_POOLS", "RATE_LIMIT"]
+    },
+    "json_keys": ["PROXY_POOLS", "RATE_LIMIT"],
+    "secret_keys": ["PROXY_POOLS"],
+    "long_text_keys": []
+  }
+}

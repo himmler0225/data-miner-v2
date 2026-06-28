@@ -1,2 +1,4 @@
-from .headers import get_youtube_headers
-from .urls import YOUTUBE_BASE_URL, get_youtube_api_url
+"""Runtime configuration package.
+
+Import from submodules directly, e.g. ``app.config.settings``, ``app.config.headers``.
+"""

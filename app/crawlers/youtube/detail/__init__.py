@@ -1,3 +1,3 @@
-from .detail import get_video_detail
+"""Video detail crawler package."""
 
-__all__ = ["get_video_detail"]
+__all__ = []

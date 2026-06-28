@@ -1,18 +1,14 @@
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from app.scheduler.scheduler import get_scheduler
-from app.scheduler.jobs import (
-    cleanup_old_data,
-    health_check_job,
-)
+
 from app.config.logger import Logger
-from app.config.settings import (
-    ENABLE_SCHEDULER,
-    CLEANUP_CRON,
-    HEALTH_CHECK_INTERVAL,
-)
+from app.config.settings import (CLEANUP_CRON, ENABLE_SCHEDULER,
+                                 HEALTH_CHECK_INTERVAL)
+from app.scheduler.jobs import cleanup_old_data, health_check_job
+from app.scheduler.scheduler import get_scheduler
 
 logger = Logger.get(__name__)
+
 
 def configure_jobs():
     scheduler = get_scheduler()
@@ -42,7 +38,9 @@ def configure_jobs():
         replace_existing=True,
         max_instances=1,
     )
-    logger.info(f"Scheduled job: Health Check (every {health_interval_minutes} minutes)")
+    logger.info(
+        f"Scheduled job: Health Check (every {health_interval_minutes} minutes)"
+    )
 
     logger.info(f"Total scheduled jobs: {len(scheduler.get_jobs())}")
     for job in scheduler.get_jobs():

@@ -3,9 +3,10 @@ Pytest configuration and fixtures
 """
 
 import os
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
 
 @pytest.fixture(scope="session")
@@ -16,15 +17,9 @@ def test_api_key():
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_env(test_api_key):
-    """
-    Setup test environment variables
-    Auto-used for all tests
-    """
     os.environ["API_KEYS"] = test_api_key
     os.environ["LOG_LEVEL"] = "DEBUG"
-    os.environ["ENABLE_SCHEDULER"] = "false"  # Disable scheduler in tests
-    os.environ["YOUTUBE_BASE_URL"] = "https://www.youtube.com"
-    os.environ["YOUTUBE_API_BASE"] = "https://www.youtube.com/youtubei/v1"
+    os.environ["ENABLE_SCHEDULER"] = "false"
 
 
 @pytest.fixture
@@ -58,11 +53,7 @@ def mock_httpx_client():
     mock_response.json.return_value = {
         "contents": {
             "twoColumnSearchResultsRenderer": {
-                "primaryContents": {
-                    "sectionListRenderer": {
-                        "contents": []
-                    }
-                }
+                "primaryContents": {"sectionListRenderer": {"contents": []}}
             }
         }
     }
@@ -86,9 +77,9 @@ def sample_video_data():
             {
                 "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg",
                 "width": 120,
-                "height": 90
+                "height": 90,
             }
-        ]
+        ],
     }
 
 
@@ -108,10 +99,10 @@ def sample_channel_data():
                 {
                     "url": "https://yt3.ggpht.com/sample/avatar.jpg",
                     "width": 88,
-                    "height": 88
+                    "height": 88,
                 }
             ]
-        }
+        },
     }
 
 
@@ -130,19 +121,19 @@ def sample_search_results():
                 "videoId": "video1",
                 "title": "Python Tutorial 1",
                 "duration": "10:00",
-                "views": "10000"
+                "views": "10000",
             },
             {
                 "videoId": "video2",
                 "title": "Python Tutorial 2",
                 "duration": "15:00",
-                "views": "20000"
+                "views": "20000",
             },
             {
                 "videoId": "video3",
                 "title": "Python Tutorial 3",
                 "duration": "20:00",
-                "views": "30000"
-            }
-        ]
+                "views": "30000",
+            },
+        ],
     }

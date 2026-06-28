@@ -9,4 +9,4 @@ This package provides signature generation for TikTok API requests:
 from .bogus import Signer
 from .gnarly import get_X_Gnarly
 
-__all__ = ['Signer', 'get_X_Gnarly']
+__all__ = ["Signer", "get_X_Gnarly"]

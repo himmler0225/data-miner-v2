@@ -1,20 +1,16 @@
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import httpx
 
 from app.config.logger import Logger
 
+from ..shared import build_headers
+
 logger = Logger.get(__name__)
 
-DETAIL_URL = "https://papi.fptshop.com.vn/gw/v1/public/fulltext-search-service/product-by-upcs"
-
-HEADERS = {
-    "accept": "application/json",
-    "content-type": "application/json",
-    "origin": "https://fptshop.com.vn",
-    "referer": "https://fptshop.com.vn/",
-    "order-channel": "1",
-}
+DETAIL_URL = (
+    "https://papi.fptshop.com.vn/gw/v1/public/fulltext-search-service/product-by-upcs"
+)
 
 
 def extract_product_detail(items: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -26,8 +22,16 @@ def extract_product_detail(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     image = item.get("image")
     thumbnail = image.get("src") if isinstance(image, dict) else image
 
-    brand = (item.get("brand") or {}).get("name") if isinstance(item.get("brand"), dict) else None
-    industry = (item.get("industry") or {}).get("name") if isinstance(item.get("industry"), dict) else None
+    brand = (
+        (item.get("brand") or {}).get("name")
+        if isinstance(item.get("brand"), dict)
+        else None
+    )
+    industry = (
+        (item.get("industry") or {}).get("name")
+        if isinstance(item.get("industry"), dict)
+        else None
+    )
 
     return {
         "code": item.get("code"),
@@ -68,7 +72,7 @@ async def get_product_by_upcs(
         resp = await client.post(
             DETAIL_URL,
             json=payload,
-            headers=HEADERS,
+            headers=build_headers(),
         )
         logger.info("[fptshop/detail] POST %s status=%s", resp.url, resp.status_code)
         resp.raise_for_status()

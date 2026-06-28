@@ -1,12 +1,18 @@
-from typing import List, Dict
+from typing import Dict, List
 
-from ....utils import get_youtube_api_key, get_context, create_httpx_client
-from ....config import get_youtube_api_url
-from ....config.constants import ENDPOINT_BROWSE
+from app.config.constants import ENDPOINT_BROWSE
+from app.crawlers.youtube.client import (create_httpx_client, get_context,
+                                         get_youtube_api_key, get_youtube_api_url)
+
 from ....exceptions import YouTubeStructureChangedError
 
+
 def extract_playlists_tab_info(data):
-    tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+    tabs = (
+        data.get("contents", {})
+        .get("twoColumnBrowseResultsRenderer", {})
+        .get("tabs", [])
+    )
     browse_id = None
     params = None
     for tab in tabs:
@@ -19,9 +25,10 @@ def extract_playlists_tab_info(data):
     if not browse_id or not params:
         raise YouTubeStructureChangedError(
             "Cannot find browseId or params for the Videos tab",
-            context={"tabs_count": len(tabs)}
+            context={"tabs_count": len(tabs)},
         )
     return browse_id, params
+
 
 def extract_title(title_obj):
     if "simpleText" in title_obj:
@@ -30,13 +37,16 @@ def extract_title(title_obj):
         return "".join([run.get("text", "") for run in title_obj["runs"]])
     return ""
 
+
 async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
     playlists = []
 
     async with create_httpx_client(proxy=proxy) as client:
-        resp = await client.post(browse_url, json={"context": get_context(), "browseId": channel_id})
+        resp = await client.post(
+            browse_url, json={"context": get_context(), "browseId": channel_id}
+        )
         resp.raise_for_status()
         data = resp.json()
 
@@ -44,14 +54,21 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
         if not browse_id or not params:
             raise YouTubeStructureChangedError(
                 "browseId and params not found after first browse request",
-                context={"channel_id": channel_id}
+                context={"channel_id": channel_id},
             )
 
-        resp = await client.post(browse_url, json={"context": get_context(), "browseId": browse_id, "params": params})
+        resp = await client.post(
+            browse_url,
+            json={"context": get_context(), "browseId": browse_id, "params": params},
+        )
         resp.raise_for_status()
         playlist_data = resp.json()
 
-        contents = playlist_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+        contents = (
+            playlist_data.get("contents", {})
+            .get("twoColumnBrowseResultsRenderer", {})
+            .get("tabs", [])
+        )
         target_tab = None
         for tab in contents:
             tab_renderer = tab.get("tabRenderer", {})
@@ -66,21 +83,36 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
             if not browse_id or not params:
                 raise YouTubeStructureChangedError(
                     "browseId and params not found for Playlists tab endpoint",
-                    context={"channel_id": channel_id}
+                    context={"channel_id": channel_id},
                 )
-            resp = await client.post(browse_url, json={"context": get_context(), "browseId": browse_id, "params": params})
+            resp = await client.post(
+                browse_url,
+                json={
+                    "context": get_context(),
+                    "browseId": browse_id,
+                    "params": params,
+                },
+            )
             resp.raise_for_status()
             playlist_data = resp.json()
-            contents = playlist_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+            contents = (
+                playlist_data.get("contents", {})
+                .get("twoColumnBrowseResultsRenderer", {})
+                .get("tabs", [])
+            )
             target_tab = next(
-                (tab.get("tabRenderer", {}) for tab in contents
-                 if tab.get("tabRenderer", {}).get("title", "").lower() == "playlists"),
-                None
+                (
+                    tab.get("tabRenderer", {})
+                    for tab in contents
+                    if tab.get("tabRenderer", {}).get("title", "").lower()
+                    == "playlists"
+                ),
+                None,
             )
             if not target_tab:
                 raise YouTubeStructureChangedError(
                     "Playlists tab not found after second browseEndpoint request",
-                    context={"channel_id": channel_id}
+                    context={"channel_id": channel_id},
                 )
 
         contents = target_tab.get("content", {}).get("sectionListRenderer", {})
@@ -89,37 +121,58 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
                 for grid_item in item.get("gridRenderer", {}).get("items", []):
                     lockup = grid_item.get("lockupViewModel", {})
                     thumbnail_url = (
-                        lockup.get("contentImage", {}).get("collectionThumbnailViewModel", {})
-                        .get("primaryThumbnail", {}).get("thumbnailViewModel", {})
-                        .get("image", {}).get("sources", [{}])[-1].get("url", "")
+                        lockup.get("contentImage", {})
+                        .get("collectionThumbnailViewModel", {})
+                        .get("primaryThumbnail", {})
+                        .get("thumbnailViewModel", {})
+                        .get("image", {})
+                        .get("sources", [{}])[-1]
+                        .get("url", "")
                     )
                     video_count = ""
                     for overlay in (
-                        lockup.get("contentImage", {}).get("collectionThumbnailViewModel", {})
-                        .get("primaryThumbnail", {}).get("thumbnailViewModel", {}).get("overlays", [])
+                        lockup.get("contentImage", {})
+                        .get("collectionThumbnailViewModel", {})
+                        .get("primaryThumbnail", {})
+                        .get("thumbnailViewModel", {})
+                        .get("overlays", [])
                     ):
-                        badge = overlay.get("thumbnailOverlayBadgeViewModel", {}).get("thumbnailBadges", [])
+                        badge = overlay.get("thumbnailOverlayBadgeViewModel", {}).get(
+                            "thumbnailBadges", []
+                        )
                         if badge:
-                            video_count = badge[0].get("thumbnailBadgeViewModel", {}).get("text", "")
+                            video_count = (
+                                badge[0]
+                                .get("thumbnailBadgeViewModel", {})
+                                .get("text", "")
+                            )
                             if video_count:
                                 break
                     title = (
-                        lockup.get("metadata", {}).get("lockupMetadataViewModel", {})
-                        .get("title", {}).get("content", "")
+                        lockup.get("metadata", {})
+                        .get("lockupMetadataViewModel", {})
+                        .get("title", {})
+                        .get("content", "")
                     )
                     playlist_id = (
-                        lockup.get("rendererContext", {}).get("commandContext", {})
-                        .get("onTap", {}).get("innertubeCommand", {})
-                        .get("watchEndpoint", {}).get("playlistId", "")
+                        lockup.get("rendererContext", {})
+                        .get("commandContext", {})
+                        .get("onTap", {})
+                        .get("innertubeCommand", {})
+                        .get("watchEndpoint", {})
+                        .get("playlistId", "")
                     )
-                    playlists.append({
-                        "playlistId": playlist_id,
-                        "title": title,
-                        "thumbnail": thumbnail_url,
-                        "videoCount": video_count,
-                    })
+                    playlists.append(
+                        {
+                            "playlistId": playlist_id,
+                            "title": title,
+                            "thumbnail": thumbnail_url,
+                            "videoCount": video_count,
+                        }
+                    )
 
     return playlists
+
 
 async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
@@ -136,20 +189,32 @@ async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> List[
             if "contents" not in data:
                 raise YouTubeStructureChangedError(
                     "Top-level 'contents' missing in playlist response",
-                    context={"playlist_id": playlist_id, "top_keys": list(data.keys())}
+                    context={"playlist_id": playlist_id, "top_keys": list(data.keys())},
                 )
 
-            tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+            tabs = (
+                data.get("contents", {})
+                .get("twoColumnBrowseResultsRenderer", {})
+                .get("tabs", [])
+            )
             contents = (
-                (tabs[0] if tabs else {}).get("tabRenderer", {}).get("content", {})
-                .get("sectionListRenderer", ).get("contents", [])
+                (tabs[0] if tabs else {})
+                .get("tabRenderer", {})
+                .get("content", {})
+                .get(
+                    "sectionListRenderer",
+                )
+                .get("contents", [])
             )
             playlist_items_list = (
-                (contents[0] if contents else {}).get("itemSectionRenderer", {}).get("contents", [])
+                (contents[0] if contents else {})
+                .get("itemSectionRenderer", {})
+                .get("contents", [])
             )
             contents = (
                 (playlist_items_list[0] if playlist_items_list else {})
-                .get("playlistVideoListRenderer", {}).get("contents", [])
+                .get("playlistVideoListRenderer", {})
+                .get("contents", [])
             )
             if not contents:
                 break
@@ -158,18 +223,27 @@ async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> List[
             for item in contents:
                 if "playlistVideoRenderer" in item:
                     renderer = item["playlistVideoRenderer"]
-                    videos.append({
-                        "video_id": renderer.get("videoId"),
-                        "title": extract_title(renderer.get("title", {})),
-                        "published_time": renderer.get("publishedTimeText", {}).get("simpleText", ""),
-                        "duration": renderer.get("lengthText", {}).get("simpleText", ""),
-                        "thumbnail": renderer.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", ""),
-                    })
+                    videos.append(
+                        {
+                            "video_id": renderer.get("videoId"),
+                            "title": extract_title(renderer.get("title", {})),
+                            "published_time": renderer.get("publishedTimeText", {}).get(
+                                "simpleText", ""
+                            ),
+                            "duration": renderer.get("lengthText", {}).get(
+                                "simpleText", ""
+                            ),
+                            "thumbnail": renderer.get("thumbnail", {})
+                            .get("thumbnails", [{}])[-1]
+                            .get("url", ""),
+                        }
+                    )
                 elif "continuationItemRenderer" in item:
                     continuation_token = (
                         item.get("continuationItemRenderer", {})
                         .get("continuationEndpoint", {})
-                        .get("continuationCommand", {}).get("token")
+                        .get("continuationCommand", {})
+                        .get("token")
                     )
 
             if continuation_token:

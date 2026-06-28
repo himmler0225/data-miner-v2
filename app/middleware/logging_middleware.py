@@ -1,10 +1,13 @@
-import time
 import json
-from starlette.types import ASGIApp, Scope, Receive, Send, Message
+import time
+
 from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
 from app.config.logger import Logger
 
 logger = Logger.get(__name__)
+
 
 class LoggingMiddleware:
     def __init__(self, app: ASGIApp) -> None:
@@ -24,13 +27,15 @@ class LoggingMiddleware:
 
         logger.info(
             f"Request started: {method} {path}",
-            extra={"extra_data": {
-                "request_id": request_id,
-                "method": method,
-                "path": path,
-                "query_params": query,
-                "client_host": client_host,
-            }},
+            extra={
+                "extra_data": {
+                    "request_id": request_id,
+                    "method": method,
+                    "path": path,
+                    "query_params": query,
+                    "client_host": client_host,
+                }
+            },
         )
 
         start_time = time.time()
@@ -52,11 +57,13 @@ class LoggingMiddleware:
             process_time = time.time() - start_time
             logger.info(
                 f"Request completed: {method} {path} - Status: {status_code}",
-                extra={"extra_data": {
-                    "request_id": request_id,
-                    "method": method,
-                    "path": path,
-                    "status_code": status_code,
-                    "process_time": f"{process_time:.3f}s",
-                }},
+                extra={
+                    "extra_data": {
+                        "request_id": request_id,
+                        "method": method,
+                        "path": path,
+                        "status_code": status_code,
+                        "process_time": f"{process_time:.3f}s",
+                    }
+                },
             )

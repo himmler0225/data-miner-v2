@@ -1,40 +1,47 @@
-from app.config.logger import Logger
 from typing import Dict, List, Optional
 
-from ..shared import create_tiki_client, create_tiki_session, build_cookies, build_headers
-from .sales_constants import FLASH_SALE_URL, FLASH_SALE_EXTRA_HEADERS
+from app.config.logger import Logger
+
+from ..shared import (build_cookies, build_headers, create_tiki_client,
+                      create_tiki_session)
+from .sales_constants import FLASH_SALE_EXTRA_HEADERS, FLASH_SALE_URL
 
 logger = Logger.get(__name__)
+
 
 def extract_flash_sale_items(items: List[Dict]) -> List[Dict]:
     result = []
     for item in items:
         product = item.get("product", {})
-        result.append({
-            "deal_id":             item.get("deal_id"),
-            "id":                  product.get("id"),
-            "master_id":           product.get("master_id"),
-            "seller_product_id":   product.get("seller_product_id"),
-            "name":                product.get("name"),
-            "short_name":          product.get("short_name") or product.get("name"),
-            "url": (
-                f"https://tiki.vn/{product.get('url_path')}"
-                if product.get("url_path") else None
-            ),
-            "thumbnail":           product.get("thumbnail_url"),
-            "price":               product.get("price"),
-            "original_price":      product.get("original_price"),
-            "discount":            product.get("discount"),
-            "discount_rate":       product.get("discount_rate"),
-            "rating":              product.get("rating_average"),
-            "review_count":        product.get("review_count"),
-            "special_price":       item.get("special_price"),
-            "flash_sale_discount": item.get("discount_percent"),
-            "sold_count":          item.get("progress", {}).get("qty_ordered"),
-            "remain_count":        item.get("progress", {}).get("qty_remain"),
-            "brand":               product.get("brand_name"),
-        })
+        result.append(
+            {
+                "deal_id": item.get("deal_id"),
+                "id": product.get("id"),
+                "master_id": product.get("master_id"),
+                "seller_product_id": product.get("seller_product_id"),
+                "name": product.get("name"),
+                "short_name": product.get("short_name") or product.get("name"),
+                "url": (
+                    f"https://tiki.vn/{product.get('url_path')}"
+                    if product.get("url_path")
+                    else None
+                ),
+                "thumbnail": product.get("thumbnail_url"),
+                "price": product.get("price"),
+                "original_price": product.get("original_price"),
+                "discount": product.get("discount"),
+                "discount_rate": product.get("discount_rate"),
+                "rating": product.get("rating_average"),
+                "review_count": product.get("review_count"),
+                "special_price": item.get("special_price"),
+                "flash_sale_discount": item.get("discount_percent"),
+                "sold_count": item.get("progress", {}).get("qty_ordered"),
+                "remain_count": item.get("progress", {}).get("qty_remain"),
+                "brand": product.get("brand_name"),
+            }
+        )
     return result
+
 
 async def get_flash_sale(
     per_page: int = 20,
@@ -47,9 +54,9 @@ async def get_flash_sale(
     headers = build_headers(guest_token, extra=FLASH_SALE_EXTRA_HEADERS)
 
     params = {
-        "per_page":    per_page,
-        "_rf":         rf,
-        "clear":       clear,
+        "per_page": per_page,
+        "_rf": rf,
+        "clear": clear,
         "trackity_id": trackity_id,
     }
 

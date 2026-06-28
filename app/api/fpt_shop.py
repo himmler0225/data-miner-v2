@@ -2,15 +2,14 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
-from app.middleware import verify_api_key, limiter
-from app.config.urls import proxy_manager
-from app.schemas.response import ApiResponse
-from app.utils import retry_on_failure
 from app.api.rate_limit_config import endpoint_limit
-
-from app.crawlers.fpt_shop.search import search_products
+from app.config.proxy import get_proxy
 from app.crawlers.fpt_shop.detail import get_product_by_upcs
 from app.crawlers.fpt_shop.reviews import get_reviews
+from app.crawlers.fpt_shop.search import search_products
+from app.crawlers.youtube.utils import retry_on_failure
+from app.middleware import limiter, verify_api_key
+from app.schemas.response import ApiResponse
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -26,14 +25,14 @@ async def search_products_endpoint(
     sort_method: Optional[
         Literal["noi-bat", "gia-thap-dan", "gia-cao-dan", "tra-gop-0"]
     ] = Query(None),
-    price_range: Optional[
-        Literal["under_2m", "2_5m", "5_10m", "over_10m"]
-    ] = Query(None),
+    price_range: Optional[Literal["under_2m", "2_5m", "5_10m", "over_10m"]] = Query(
+        None
+    ),
 ):
     @retry_on_failure(max_retries=3, delay=1)
     async def _():
         skip = (page - 1) * limit
-        proxy = await proxy_manager.get_proxy()
+        proxy = await get_proxy()
 
         price_min = price_max = None
         if price_range:
@@ -79,7 +78,7 @@ async def get_product_detail_endpoint(
 ):
     @retry_on_failure(max_retries=3, delay=1)
     async def _():
-        proxy = await proxy_manager.get_proxy()
+        proxy = await get_proxy()
         data = await get_product_by_upcs(
             upcs=[upc],
             is_excluded_product=True,
@@ -106,7 +105,7 @@ async def get_reviews_endpoint(
     @retry_on_failure(max_retries=3, delay=1)
     async def _():
         skip = (page - 1) * limit
-        proxy = await proxy_manager.get_proxy()
+        proxy = await get_proxy()
         data = await get_reviews(
             product_id=product_id,
             skip=skip,

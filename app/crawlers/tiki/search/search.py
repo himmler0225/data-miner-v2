@@ -1,10 +1,13 @@
-from app.config.logger import Logger
 from typing import Dict, List, Optional
 
-from ..shared import create_tiki_client, create_tiki_session, build_cookies, build_headers
-from .search_constants import SEARCH_URL, SEARCH_EXTRA_HEADERS
+from app.config.logger import Logger
+
+from ..shared import (build_cookies, build_headers, create_tiki_client,
+                      create_tiki_session)
+from .search_constants import SEARCH_EXTRA_HEADERS, SEARCH_URL
 
 logger = Logger.get(__name__)
+
 
 def extract_products(items: List[Dict]) -> List[Dict]:
     result = []
@@ -18,9 +21,7 @@ def extract_products(items: List[Dict]) -> List[Dict]:
                 badges.append(code)
             if badge.get("code") == "variant_count":
                 variant_info = [
-                    x.get("value")
-                    for x in badge.get("arr_text", [])
-                    if x.get("value")
+                    x.get("value") for x in badge.get("arr_text", []) if x.get("value")
                 ]
                 break
 
@@ -30,32 +31,34 @@ def extract_products(items: List[Dict]) -> List[Dict]:
         else:
             sold_count = quantity_sold or 0
 
-        result.append({
-            "id":            item.get("id"),
-            "sku":           item.get("sku"),
-            "name":          item.get("name"),
-            "short_name":    item.get("short_name") or item.get("name"),
-            "url":           f"https://tiki.vn/{item.get('url_path', '')}",
-            "thumbnail":     item.get("thumbnail_url"),
-            "price":         item.get("price"),
-            "original_price": item.get("original_price"),
-            "discount_rate": item.get("discount_rate"),
-            "rating":        item.get("rating_average"),
-            "review_count":  item.get("review_count"),
-            "sold_count":    sold_count,
-            "brand":         item.get("brand_name"),
-            "seller":        item.get("seller_name"),
-            "badges":        badges,
-            "is_authentic": (
-                item.get("is_authentic") == 1
-                or "authentic_brand" in badges
-            ),
-            "is_tikinow":    item.get("is_tikinow_delivery", False),
-            "category":      item.get("primary_category_name"),
-            "variant":       variant_info,
-            "seller_product_id": item.get("seller_product_id"),
-        })
+        result.append(
+            {
+                "id": item.get("id"),
+                "sku": item.get("sku"),
+                "name": item.get("name"),
+                "short_name": item.get("short_name") or item.get("name"),
+                "url": f"https://tiki.vn/{item.get('url_path', '')}",
+                "thumbnail": item.get("thumbnail_url"),
+                "price": item.get("price"),
+                "original_price": item.get("original_price"),
+                "discount_rate": item.get("discount_rate"),
+                "rating": item.get("rating_average"),
+                "review_count": item.get("review_count"),
+                "sold_count": sold_count,
+                "brand": item.get("brand_name"),
+                "seller": item.get("seller_name"),
+                "badges": badges,
+                "is_authentic": (
+                    item.get("is_authentic") == 1 or "authentic_brand" in badges
+                ),
+                "is_tikinow": item.get("is_tikinow_delivery", False),
+                "category": item.get("primary_category_name"),
+                "variant": variant_info,
+                "seller_product_id": item.get("seller_product_id"),
+            }
+        )
     return result
+
 
 async def search_products(
     q: str,
@@ -74,11 +77,11 @@ async def search_products(
     headers = build_headers(guest_token, extra=SEARCH_EXTRA_HEADERS)
 
     params: Dict = {
-        "q":            q,
-        "limit":        limit,
-        "include":      include,
+        "q": q,
+        "limit": limit,
+        "include": include,
         "aggregations": aggregations,
-        "trackity_id":  trackity_id,
+        "trackity_id": trackity_id,
     }
     if page is not None:
         params["page"] = page
@@ -98,6 +101,6 @@ async def search_products(
         data = resp.json()
 
     return {
-        "paging":   data.get("paging", {}),
+        "paging": data.get("paging", {}),
         "products": extract_products(data.get("data", [])),
     }

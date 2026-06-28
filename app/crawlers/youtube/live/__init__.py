@@ -1,3 +1,3 @@
-from .live import get_all_live_videos
+"""Live video crawler package."""
 
-__all__ = ["get_all_live_videos"]
+__all__ = []

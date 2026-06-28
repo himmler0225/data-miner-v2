@@ -1,3 +1,3 @@
-from .trending import get_trending_videos
+"""Trending crawler package."""
 
-__all__ = ["get_trending_videos"]
+__all__ = []

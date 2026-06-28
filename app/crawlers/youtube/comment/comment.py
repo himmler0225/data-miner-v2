@@ -1,38 +1,40 @@
 import asyncio
 import base64
-from typing import List, Dict, Literal
+from typing import Dict, List, Literal
 
-from ....utils import get_youtube_api_key, get_context, create_httpx_client, parse_view_count
-from ....config import get_youtube_api_url
-from ....config.constants import ENDPOINT_NEXT
-from ....exceptions import YouTubeStructureChangedError
+from app.config.constants import ENDPOINT_NEXT
 from app.config.logger import Logger
+from app.crawlers.youtube.client import (create_httpx_client, get_context,
+                                         get_youtube_api_key, get_youtube_api_url)
+from app.crawlers.youtube.utils import parse_view_count
 
 logger = Logger.get(__name__)
 
+
 def _build_comment_sort_token(video_id: str, sort: str = "top") -> str:
-    """
-    Construct YouTube comment continuation token with sort order.
-    Protobuf reverse-engineered from YouTube InnerTube /next endpoint.
-    sort="newest" → field 3 = 6 (COMMENT_SORT_ORDER_BY_TIME)
-    sort="top"    → no sort field (YouTube default)
-    """
     vid = video_id.encode()
     n = len(vid)
 
-    inner_vid  = bytes([0x12, n]) + vid
-    f2         = bytes([0x12, len(inner_vid)]) + inner_vid
-    f3         = bytes([0x18, 0x06]) if sort == "newest" else b""
+    inner_vid = bytes([0x12, n]) + vid
+    f2 = bytes([0x12, len(inner_vid)]) + inner_vid
+    f3 = bytes([0x18, 0x06]) if sort == "newest" else b""
 
-    inner4     = bytes([0x22, n]) + vid + bytes([0x30, 0x01, 0x78, 0x02])
-    f4         = bytes([0x22, len(inner4)]) + inner4
-    f8         = bytes([0x42, 0x10]) + b"comments-section"
+    inner4 = bytes([0x22, n]) + vid + bytes([0x30, 0x01, 0x78, 0x02])
+    f4 = bytes([0x22, len(inner4)]) + inner4
+    f8 = bytes([0x42, 0x10]) + b"comments-section"
     f6_content = f4 + f8
-    f6         = bytes([0x32, len(f6_content)]) + f6_content
+    f6 = bytes([0x32, len(f6_content)]) + f6_content
 
     return base64.urlsafe_b64encode(f2 + f3 + f6).decode().rstrip("=")
 
-async def fetch_replies(client, continuation_token: str, context: dict, proxy: str = None, max_depth: int = 2) -> List[Dict]:
+
+async def fetch_replies(
+    client,
+    continuation_token: str,
+    context: dict,
+    proxy: str = None,
+    max_depth: int = 2,
+) -> List[Dict]:
     replies = []
     api_key = await get_youtube_api_key(proxy=proxy)
     url_comment = get_youtube_api_url(ENDPOINT_NEXT, api_key)
@@ -48,41 +50,55 @@ async def fetch_replies(client, continuation_token: str, context: dict, proxy: s
         depth += 1
 
         for action in data.get("onResponseReceivedEndpoints", []):
-            for item in action.get("appendContinuationItemsAction", {}).get("continuationItems", []):
+            for item in action.get("appendContinuationItemsAction", {}).get(
+                "continuationItems", []
+            ):
                 if "commentViewModel" in item:
                     comment_vm = item.get("commentViewModel", {})
                     comment_id = comment_vm.get("commentId")
                     entity = entity_map.get(comment_id, {})
                     if not entity:
-                        logger.debug("Missing entity for reply commentId=%s", comment_id)
+                        logger.debug(
+                            "Missing entity for reply commentId=%s", comment_id
+                        )
                         continue
-                    replies.append({
-                        "comment_id": comment_id,
-                        "author": entity.get("author", ""),
-                        "avatar": entity.get("avatar"),
-                        "content": entity.get("content", ""),
-                        "published_time": entity.get("published_time", ""),
-                        "likes": entity.get("likes", 0),
-                    })
+                    replies.append(
+                        {
+                            "comment_id": comment_id,
+                            "author": entity.get("author", ""),
+                            "avatar": entity.get("avatar"),
+                            "content": entity.get("content", ""),
+                            "published_time": entity.get("published_time", ""),
+                            "likes": entity.get("likes", 0),
+                        }
+                    )
                 elif "continuationItemRenderer" in item:
                     continuation_token = (
                         item.get("continuationItemRenderer", {})
-                        .get("button", {}).get("buttonRenderer", {})
-                        .get("command", {}).get("continuationCommand", {}).get("token")
+                        .get("button", {})
+                        .get("buttonRenderer", {})
+                        .get("command", {})
+                        .get("continuationCommand", {})
+                        .get("token")
                     )
 
     return replies
+
 
 def extract_comment_continuation_token(data: dict) -> str:
     # Path 1: onResponseReceivedEndpoints
     try:
         for ep in data.get("onResponseReceivedEndpoints", []):
-            for action_key in ("reloadContinuationItemsCommand", "appendContinuationItemsAction"):
+            for action_key in (
+                "reloadContinuationItemsCommand",
+                "appendContinuationItemsAction",
+            ):
                 for item in ep.get(action_key, {}).get("continuationItems", []):
                     token = (
                         item.get("continuationItemRenderer", {})
                         .get("continuationEndpoint", {})
-                        .get("continuationCommand", {}).get("token")
+                        .get("continuationCommand", {})
+                        .get("token")
                     )
                     if token:
                         return token
@@ -92,15 +108,19 @@ def extract_comment_continuation_token(data: dict) -> str:
     # Path 2: twoColumnWatchNextResults
     try:
         results = (
-            data.get("contents", {}).get("twoColumnWatchNextResults", {})
-            .get("results", {}).get("results", {}).get("contents", [])
+            data.get("contents", {})
+            .get("twoColumnWatchNextResults", {})
+            .get("results", {})
+            .get("results", {})
+            .get("contents", [])
         )
         for item in results:
             for content in item.get("itemSectionRenderer", {}).get("contents", []):
                 token = (
                     content.get("continuationItemRenderer", {})
                     .get("continuationEndpoint", {})
-                    .get("continuationCommand", {}).get("token")
+                    .get("continuationCommand", {})
+                    .get("token")
                 )
                 if token:
                     return token
@@ -123,10 +143,16 @@ def extract_comment_continuation_token(data: dict) -> str:
 
     # Path 4: frameworkUpdates mutations
     try:
-        for m in data.get("frameworkUpdates", {}).get("entityBatchUpdate", {}).get("mutations", []):
+        for m in (
+            data.get("frameworkUpdates", {})
+            .get("entityBatchUpdate", {})
+            .get("mutations", [])
+        ):
             token = (
-                m.get("payload", {}).get("continuationEndpoint", {})
-                .get("continuationCommand", {}).get("token")
+                m.get("payload", {})
+                .get("continuationEndpoint", {})
+                .get("continuationCommand", {})
+                .get("token")
             )
             if token:
                 return token
@@ -135,9 +161,14 @@ def extract_comment_continuation_token(data: dict) -> str:
 
     return None
 
+
 def parse_comment_entities(data: dict) -> dict:
     result = {}
-    for m in data.get("frameworkUpdates", {}).get("entityBatchUpdate", {}).get("mutations", []):
+    for m in (
+        data.get("frameworkUpdates", {})
+        .get("entityBatchUpdate", {})
+        .get("mutations", [])
+    ):
         payload = m.get("payload", {})
         comment = payload.get("commentEntityPayload", {})
         props = comment.get("properties", {})
@@ -151,10 +182,15 @@ def parse_comment_entities(data: dict) -> dict:
                 "author": comment.get("author", {}).get("displayName", ""),
                 "avatar": comment.get("author", {}).get("avatarThumbnailUrl", ""),
                 "published_time": props.get("publishedTime", "Unknown"),
-                "likes": parse_view_count(comment.get("toolbar", {}).get("likeCountLiked")),
-                "replies": parse_view_count(comment.get("toolbar", {}).get("replyCount")),
+                "likes": parse_view_count(
+                    comment.get("toolbar", {}).get("likeCountLiked")
+                ),
+                "replies": parse_view_count(
+                    comment.get("toolbar", {}).get("replyCount")
+                ),
             }
     return result
+
 
 async def get_video_comments(
     video_id: str,
@@ -162,9 +198,9 @@ async def get_video_comments(
     max_comments: int = 100,
     sort: Literal["top", "newest"] = "top",
 ) -> List[Dict]:
-    api_key  = await get_youtube_api_key(proxy=proxy)
+    api_key = await get_youtube_api_key(proxy=proxy)
     url_next = get_youtube_api_url(ENDPOINT_NEXT, api_key)
-    context  = get_context()
+    context = get_context()
     comments = []
 
     async with create_httpx_client(proxy=proxy) as client:
@@ -174,30 +210,40 @@ async def get_video_comments(
             logger.debug("Using pre-built newest-sort token for %s", video_id)
         else:
             # sort="top" requires a session token from YouTube — must fetch it first.
-            resp = await client.post(url_next, json={"context": context, "videoId": video_id})
+            resp = await client.post(
+                url_next, json={"context": context, "videoId": video_id}
+            )
             resp.raise_for_status()
             data = resp.json()
             continuation_token = extract_comment_continuation_token(data)
             if not continuation_token:
-                logger.warning("🟡 [comments] no continuation token for %s — comments may be disabled", video_id)
+                logger.warning(
+                    "🟡 [comments] no continuation token for %s — comments may be disabled",
+                    video_id,
+                )
                 return []
 
         while continuation_token and len(comments) < max_comments:
-            resp = await client.post(url_next, json={"context": context, "continuation": continuation_token})
+            resp = await client.post(
+                url_next, json={"context": context, "continuation": continuation_token}
+            )
             resp.raise_for_status()
             data = resp.json()
             entity_map = parse_comment_entities(data)
             continuation_token = None
 
             for action in data.get("onResponseReceivedEndpoints", []):
-                items = (
-                    action.get("reloadContinuationItemsCommand", {}).get("continuationItems", []) or
-                    action.get("appendContinuationItemsAction", {}).get("continuationItems", [])
+                items = action.get("reloadContinuationItemsCommand", {}).get(
+                    "continuationItems", []
+                ) or action.get("appendContinuationItemsAction", {}).get(
+                    "continuationItems", []
                 )
                 for item in items:
                     if "commentThreadRenderer" in item:
                         thread = item["commentThreadRenderer"]
-                        comment_vm = thread.get("commentViewModel", {}).get("commentViewModel", {})
+                        comment_vm = thread.get("commentViewModel", {}).get(
+                            "commentViewModel", {}
+                        )
                         comment_id = comment_vm.get("commentId")
                         entity = entity_map.get(comment_id, {})
                         if not entity:
@@ -218,11 +264,16 @@ async def get_video_comments(
                         }
 
                         reply_token = None
-                        for c in thread.get("replies", {}).get("commentRepliesRenderer", {}).get("contents", []):
+                        for c in (
+                            thread.get("replies", {})
+                            .get("commentRepliesRenderer", {})
+                            .get("contents", [])
+                        ):
                             continuation = (
                                 c.get("continuationItemRenderer", {})
                                 .get("continuationEndpoint", {})
-                                .get("continuationCommand", {}).get("token")
+                                .get("continuationCommand", {})
+                                .get("token")
                             )
                             if continuation:
                                 reply_token = continuation
@@ -238,18 +289,29 @@ async def get_video_comments(
                         continuation_token = (
                             item.get("continuationItemRenderer", {})
                             .get("continuationEndpoint", {})
-                            .get("continuationCommand", {}).get("token")
+                            .get("continuationCommand", {})
+                            .get("token")
                         )
 
                 if len(comments) >= max_comments:
                     break
 
         # Batch-fetch all replies in parallel instead of sequential awaits
-        pending = [(i, c.pop("_reply_token")) for i, c in enumerate(comments) if "_reply_token" in c]
+        pending = [
+            (i, c.pop("_reply_token"))
+            for i, c in enumerate(comments)
+            if "_reply_token" in c
+        ]
         if pending:
-            logger.debug("🟢 [comments] fetching replies for %d comments in parallel", len(pending))
+            logger.debug(
+                "🟢 [comments] fetching replies for %d comments in parallel",
+                len(pending),
+            )
             results = await asyncio.gather(
-                *[fetch_replies(client, tok, context, proxy=proxy) for _, tok in pending],
+                *[
+                    fetch_replies(client, tok, context, proxy=proxy)
+                    for _, tok in pending
+                ],
                 return_exceptions=True,
             )
             for (idx, _), result in zip(pending, results):
@@ -277,7 +339,9 @@ async def get_video_comments_batch(
     async def _one(vid: str):
         async with sem:
             try:
-                comments = await get_video_comments(vid, proxy=proxy, max_comments=max_per_video, sort=sort)
+                comments = await get_video_comments(
+                    vid, proxy=proxy, max_comments=max_per_video, sort=sort
+                )
                 return vid, comments, None
             except Exception as e:
                 return vid, [], str(e)
@@ -285,23 +349,30 @@ async def get_video_comments_batch(
     results = await asyncio.gather(*[_one(v) for v in video_ids])
 
     per_video = []
-    skipped   = []
+    skipped = []
     for vid, comments, err in results:
         if err:
             skipped.append({"video_id": vid, "reason": "error", "detail": err})
         elif not comments:
             skipped.append({"video_id": vid, "reason": "disabled_or_empty"})
         else:
-            per_video.append({"video_id": vid, "total": len(comments), "comments": comments})
+            per_video.append(
+                {"video_id": vid, "total": len(comments), "comments": comments}
+            )
 
     total = sum(v["total"] for v in per_video)
-    logger.info("🟢 [comments/batch] %d ids → %d with comments, %d skipped, %d total comments",
-                len(video_ids), len(per_video), len(skipped), total)
+    logger.info(
+        "🟢 [comments/batch] %d ids → %d with comments, %d skipped, %d total comments",
+        len(video_ids),
+        len(per_video),
+        len(skipped),
+        total,
+    )
     return {
-        "requested":            len(video_ids),
+        "requested": len(video_ids),
         "videos_with_comments": len(per_video),
-        "videos_skipped":       len(skipped),
-        "total_comments":       total,
-        "results":              per_video,
-        "skipped":              skipped,
+        "videos_skipped": len(skipped),
+        "total_comments": total,
+        "results": per_video,
+        "skipped": skipped,
     }

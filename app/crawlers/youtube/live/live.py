@@ -1,10 +1,16 @@
-from typing import List, Dict
+from typing import Dict, List
 
-from ....utils import get_context, get_youtube_api_key, create_httpx_client, parse_view_count
-from ....config import get_youtube_headers, get_youtube_api_url
-from ....config.constants import ENDPOINT_SEARCH, SEARCH_FILTER_LIVE
+from app.config.constants import (ENDPOINT_SEARCH, SEARCH_FILTER_LIVE,
+                                  YOUTUBE_BASE_URL)
+from app.config.headers import get_youtube_headers
+from app.crawlers.youtube.client import (create_httpx_client, get_context,
+                                         get_youtube_api_key, get_youtube_api_url)
+from app.crawlers.youtube.utils import parse_view_count
+
 from ....exceptions import YouTubeStructureChangedError
-from ..shared import extract_continuation_token, get_continuation_items, join_runs
+from ..shared.parsers import (extract_continuation_token, get_continuation_items,
+                              join_runs)
+
 
 def extract_live_videos(items: List[Dict]) -> List[Dict]:
     videos = []
@@ -12,19 +18,28 @@ def extract_live_videos(items: List[Dict]) -> List[Dict]:
         video = item.get("videoRenderer")
         if not video:
             continue
-        views_raw = join_runs(video.get("shortViewCountText", {})) if "shortViewCountText" in video else ""
-        videos.append({
-            "video_id": video.get("videoId"),
-            "title": join_runs(video.get("title", {})),
-            "thumbnail": video.get("thumbnail", {}).get("thumbnails", []),
-            "channel_name": join_runs(video.get("ownerText", {})),
-            "url": f"https://www.youtube.com/watch?v={video.get('videoId')}",
-            "view_count": parse_view_count(views_raw),
-            "is_live": True,
-        })
+        views_raw = (
+            join_runs(video.get("shortViewCountText", {}))
+            if "shortViewCountText" in video
+            else ""
+        )
+        videos.append(
+            {
+                "video_id": video.get("videoId"),
+                "title": join_runs(video.get("title", {})),
+                "thumbnail": video.get("thumbnail", {}).get("thumbnails", []),
+                "channel_name": join_runs(video.get("ownerText", {})),
+                "url": f"{YOUTUBE_BASE_URL}/watch?v={video.get('videoId')}",
+                "view_count": parse_view_count(views_raw),
+                "is_live": True,
+            }
+        )
     return videos
 
-async def get_all_live_videos(q: str = "", proxy: str = None, max_results: int = 100) -> List[Dict]:
+
+async def get_all_live_videos(
+    q: str = "", proxy: str = None, max_results: int = 100
+) -> List[Dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     search_url = get_youtube_api_url(ENDPOINT_SEARCH, api_key)
     headers = get_youtube_headers()
@@ -47,13 +62,19 @@ async def get_all_live_videos(q: str = "", proxy: str = None, max_results: int =
         if not contents:
             raise YouTubeStructureChangedError(
                 "sectionListRenderer.contents not found in live search response",
-                context={"top_keys": list(data.get("contents", {}).keys())}
+                context={"top_keys": list(data.get("contents", {}).keys())},
             )
 
         for section in contents:
-            collected += extract_live_videos(section.get("itemSectionRenderer", {}).get("contents", []))
+            collected += extract_live_videos(
+                section.get("itemSectionRenderer", {}).get("contents", [])
+            )
         continuation = next(
-            (extract_continuation_token(section) for section in contents if "continuationItemRenderer" in section),
+            (
+                extract_continuation_token(section)
+                for section in contents
+                if "continuationItemRenderer" in section
+            ),
             None,
         )
 
@@ -65,7 +86,11 @@ async def get_all_live_videos(q: str = "", proxy: str = None, max_results: int =
             continuation_items = get_continuation_items(data)
             collected += extract_live_videos(continuation_items)
             continuation = next(
-                (extract_continuation_token(item) for item in continuation_items if "continuationItemRenderer" in item),
+                (
+                    extract_continuation_token(item)
+                    for item in continuation_items
+                    if "continuationItemRenderer" in item
+                ),
                 None,
             )
 

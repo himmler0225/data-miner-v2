@@ -1,11 +1,11 @@
-import time
 import threading
+import time
 from typing import Any, Dict, Optional, Tuple
 
-from app.config.constants import TIKTOK_CACHE_TTL, TIKTOK_CACHE_MAX_SIZE
+from app.config.constants import TIKTOK_CACHE_MAX_SIZE, TIKTOK_CACHE_TTL
 
 _store: Dict[str, Tuple[float, Any]] = {}
-_lock  = threading.Lock()
+_lock = threading.Lock()
 
 
 def _key(parts: Tuple) -> str:

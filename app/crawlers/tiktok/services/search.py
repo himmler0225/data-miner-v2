@@ -3,14 +3,23 @@ TikTok Search Service
 """
 
 import time
-from typing import Dict, Any
+from typing import Any, Dict
+
 from .base import TikTokBaseService
+
 
 class SearchService(TikTokBaseService):
     """TikTok Search Service"""
 
-    def search(self, keyword: str, count: int = 20, use_fresh_token: bool = True,
-               cursor: int = 0, offset: int = 0, proxies: Dict[str, str] = None) -> Dict[str, Any]:
+    def search(
+        self,
+        keyword: str,
+        count: int = 20,
+        use_fresh_token: bool = True,
+        cursor: int = 0,
+        offset: int = 0,
+        proxies: Dict[str, str] = None,
+    ) -> Dict[str, Any]:
         """
         Search TikTok videos
 
@@ -27,20 +36,22 @@ class SearchService(TikTokBaseService):
         # Use macOS Chrome fingerprint — matches the validated working browser request.
         # No search_source/from_page (not present in the working curl).
         params = self._get_mac_search_params()
-        params.update({
-            "keyword": keyword,
-            "count": str(count),
-            "cursor": str(cursor),
-            "offset": str(offset),
-            "is_non_personalized_search": "0",
-        })
+        params.update(
+            {
+                "keyword": keyword,
+                "count": str(count),
+                "cursor": str(cursor),
+                "offset": str(offset),
+                "is_non_personalized_search": "0",
+            }
+        )
 
         data = self._make_request(
             "/api/search/general/full/",
             params,
             use_fresh_token=use_fresh_token,
             user_agent=self.MAC_SEARCH_UA,
-            proxies=proxies
+            proxies=proxies,
         )
 
         if data and "data" in data:
@@ -56,14 +67,21 @@ class SearchService(TikTokBaseService):
                 "count": len(items),
                 "has_more": data.get("has_more", False),
                 "cursor": data.get("cursor", cursor),
-                "log_pb": data.get("log_pb", {})
+                "log_pb": data.get("log_pb", {}),
             }
 
         return {"success": False, "data": [], "count": 0, "has_more": False}
 
-    def search_multiple_pages(self, keyword: str, total_items: int = 100,
-                             per_page: int = 20, max_pages: int = 10,
-                             use_fresh_token: bool = True, delay: float = 1.0, proxies: Dict[str, str] = None) -> Dict[str, Any]:
+    def search_multiple_pages(
+        self,
+        keyword: str,
+        total_items: int = 100,
+        per_page: int = 20,
+        max_pages: int = 10,
+        use_fresh_token: bool = True,
+        delay: float = 1.0,
+        proxies: Dict[str, str] = None,
+    ) -> Dict[str, Any]:
         """
         Search TikTok videos with pagination to get more results
 
@@ -90,15 +108,17 @@ class SearchService(TikTokBaseService):
 
         for page in range(max_pages):
             params = self._get_mobile_params()
-            params.update({
-                "keyword": keyword,
-                "count": str(per_page),
-                "cursor": str(cursor),
-                "offset": str(offset),
-                "search_source": "normal_search",
-                "from_page": "search",
-                "is_non_personalized_search": "0",
-            })
+            params.update(
+                {
+                    "keyword": keyword,
+                    "count": str(per_page),
+                    "cursor": str(cursor),
+                    "offset": str(offset),
+                    "search_source": "normal_search",
+                    "from_page": "search",
+                    "is_non_personalized_search": "0",
+                }
+            )
 
             if page == 0:
                 params["focus_state"] = "true"
@@ -114,7 +134,7 @@ class SearchService(TikTokBaseService):
                 params,
                 use_fresh_token=False,
                 delay_before_request=0.5 if page > 0 else 1.5,
-                proxies=proxies
+                proxies=proxies,
             )
 
             if not data or "data" not in data:
@@ -151,5 +171,5 @@ class SearchService(TikTokBaseService):
             "success": True,
             "data": all_items,
             "count": len(all_items),
-            "pages_fetched": pages_fetched
+            "pages_fetched": pages_fetched,
         }

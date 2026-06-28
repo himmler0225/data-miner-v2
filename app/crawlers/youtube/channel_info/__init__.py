@@ -1,3 +1,3 @@
-from .channel_info import get_channel_info
+"""Channel info crawler package."""
 
-__all__ = ["get_channel_info"]
+__all__ = []
