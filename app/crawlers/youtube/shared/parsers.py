@@ -5,7 +5,7 @@ from app.crawlers.youtube.utils import parse_view_count
 
 
 def join_runs(node: dict) -> str:
-    """Concatenate all `runs[].text` — YouTube splits text at styled/bolded spans."""
+    """Concatenate all `runs[].text` ; YouTube splits text at styled/bolded spans."""
     runs = node.get("runs") if isinstance(node, dict) else None
     if runs:
         return "".join(r.get("text", "") for r in runs)

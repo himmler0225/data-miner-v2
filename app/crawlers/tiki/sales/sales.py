@@ -62,7 +62,7 @@ async def get_flash_sale(
 
     async with create_tiki_client(headers, cookies, proxy=proxy) as client:
         resp = await client.get(FLASH_SALE_URL, params=params)
-        logger.info("🟢 [tiki/sales] GET %s → %s", resp.url, resp.status_code)
+        logger.info("[tiki/sales] GET %s -> %s", resp.url, resp.status_code)
         resp.raise_for_status()
         data = resp.json()
 

@@ -1,5 +1,4 @@
 import json
-import os 
 from typing import Optional, Set
 
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -7,7 +6,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.config.logger import Logger
 from app.config.settings import APP_ENV, ENABLE_IP_WHITELIST
 from app.config.settings import WHITELISTED_IPS as _IPS_LIST
-from app.config.settings import WHITELISTED_SERVICES as _SVC_LIST
+from app.middleware.service_tokens import validate_service_identity
 
 logger = Logger.get(__name__)
 
@@ -24,37 +23,25 @@ def _build_ip_set() -> Set[str]:
 
 
 WHITELISTED_IPS = _build_ip_set()
-WHITELISTED_SERVICES = set(_SVC_LIST)
 WHITELIST_ENABLED = ENABLE_IP_WHITELIST
 
 
 def is_ip_whitelisted(ip: str) -> bool:
     if not WHITELISTED_IPS:
         return True
-
     return ip in WHITELISTED_IPS
-
-
-def is_service_whitelisted(service_name: Optional[str]) -> bool:
-    if not WHITELISTED_SERVICES or not service_name:
-        return False
-
-    return service_name in WHITELISTED_SERVICES
 
 
 def _get_client_ip_from_scope(scope: Scope, headers: dict) -> str:
     forwarded_for = headers.get(b"x-forwarded-for", b"").decode()
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
-
     real_ip = headers.get(b"x-real-ip", b"").decode()
     if real_ip:
         return real_ip.strip()
-
     client = scope.get("client")
     if client:
         return client[0]
-
     return "unknown"
 
 
@@ -83,37 +70,25 @@ class IPWhitelistMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-
         if not WHITELIST_ENABLED:
             await self.app(scope, receive, send)
             return
-
         path = scope.get("path", "")
         if path == "/health":
             await self.app(scope, receive, send)
             return
-
         headers = {k.lower(): v for k, v in scope.get("headers", [])}
         client_ip = _get_client_ip_from_scope(scope, headers)
         service_name = headers.get(b"x-service-name", b"").decode() or None
         service_token = headers.get(b"x-service-token", b"").decode() or None
-
-        if service_name and service_token:
-            expected_token = os.getenv(f"SERVICE_TOKEN_{service_name.upper()}")
-            if (
-                expected_token
-                and service_token == expected_token
-                and is_service_whitelisted(service_name)
-            ):
-                logger.debug("Request from whitelisted service: %s", service_name)
-                await self.app(scope, receive, send)
-                return
-
+        if validate_service_identity(service_name, service_token):
+            logger.debug("Request from whitelisted service: %s", service_name)
+            await self.app(scope, receive, send)
+            return
         if is_ip_whitelisted(client_ip):
             logger.debug("Request from whitelisted IP: %s", client_ip)
             await self.app(scope, receive, send)
             return
-
         logger.warning(
             "Blocked request from non-whitelisted source",
             extra={
@@ -125,5 +100,4 @@ class IPWhitelistMiddleware:
                 }
             },
         )
-
         await _send_403(send)

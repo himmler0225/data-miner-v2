@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from .system import router as system_router
+from app.api.admin.system import router as system_router
 
 router = APIRouter(prefix="/admin")
 router.include_router(system_router, tags=["Admin"])

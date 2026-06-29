@@ -6,8 +6,8 @@ from typing import Any, Dict
 from urllib.parse import urlencode, urlparse
 
 import requests
-# Import signature generators (path resolved by native.py via sys.path)
-from lib.signatures import Signer, get_X_Gnarly
+from app.crawlers.tiktok.lib.signatures.bogus import Signer
+from app.crawlers.tiktok.lib.signatures.gnarly import get_X_Gnarly
 
 
 class TikTokBaseService:

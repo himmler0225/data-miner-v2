@@ -27,7 +27,7 @@ def _fetch_sync(video_id: str, proxy_url: Optional[str] = None) -> Optional[Dict
         try:
             transcript_list = api.list(video_id)
         except TranscriptsDisabled:
-            logger.info("🟡 [transcript] disabled for %s", video_id)
+            logger.info("[transcript] disabled for %s", video_id)
             return None
 
         for lang in _LANG_PRIORITY:
@@ -60,7 +60,7 @@ def _fetch_sync(video_id: str, proxy_url: Optional[str] = None) -> Optional[Dict
             return None
 
     except Exception as e:
-        logger.warning("🔴 [transcript] %s — %s", video_id, e)
+        logger.warning("[transcript] %s ; %s", video_id, e)
         return None
 
 
@@ -69,13 +69,13 @@ async def get_transcript(video_id: str) -> Optional[Dict]:
     result = await asyncio.to_thread(_fetch_sync, video_id, proxy_url)
     if result:
         logger.info(
-            "🟢 [transcript] %s lang=%s chars=%d",
+            "[transcript] %s lang=%s chars=%d",
             video_id,
             result["language"],
             result["char_count"],
         )
     else:
-        logger.warning("🔴 [transcript] %s — not available", video_id)
+        logger.warning("[transcript] %s ; not available", video_id)
     return result
 
 
@@ -93,6 +93,6 @@ async def get_transcript_batch(
     results = {vid: data for vid, data in pairs}
     found = sum(1 for v in results.values() if v)
     logger.info(
-        "🟢 [transcript/batch] %d/%d videos have transcripts", found, len(video_ids)
+        "[transcript/batch] %d/%d videos have transcripts", found, len(video_ids)
     )
     return results

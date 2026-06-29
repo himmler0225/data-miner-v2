@@ -7,25 +7,13 @@ import app.config.settings as settings
 _DEFAULT_ENDPOINT = "30/minute"
 
 
-def endpoint_limit(endpoint_type: str) -> Callable[[], str]:
-    """Return a callable for slowapi — resolves limit at request time."""
-
-    def _resolve() -> str:
+def endpoint_limit(endpoint_type: str) -> Callable[[str], str]:
+    def _resolve(key: str) -> str:
+        if key.startswith("service:"):
+            service = key.split(":", 1)[1]
+            svc_limit = settings.SERVICE_RATE_LIMITS.get(service)
+            if svc_limit:
+                return svc_limit
         return settings.RATE_LIMITS.get(endpoint_type, _DEFAULT_ENDPOINT)
 
     return _resolve
-
-
-def get_rate_limit(endpoint_type: str) -> str:
-    return settings.RATE_LIMITS.get(endpoint_type, _DEFAULT_ENDPOINT)
-
-
-def get_burst_limit(endpoint_type: str) -> str:
-    return settings.BURST_LIMITS.get(endpoint_type, "3/10seconds")
-
-
-def get_service_rate_limit(service_name: str) -> str:
-    return settings.SERVICE_RATE_LIMITS.get(
-        service_name,
-        settings.SERVICE_RATE_LIMITS.get("default", "50/minute"),
-    )

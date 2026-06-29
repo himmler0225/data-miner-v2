@@ -86,7 +86,7 @@ def retry_on_failure(max_retries=3, delay=1):
                         await asyncio.sleep(wait_time)
                         continue
                     logger.error(
-                        "🔴 All %d retries exhausted for %s",
+                        " All %d retries exhausted for %s",
                         max_retries,
                         func.__name__,
                         exc_info=True,

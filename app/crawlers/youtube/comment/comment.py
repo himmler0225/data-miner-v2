@@ -209,7 +209,7 @@ async def get_video_comments(
             continuation_token = _build_comment_sort_token(video_id, "newest")
             logger.debug("Using pre-built newest-sort token for %s", video_id)
         else:
-            # sort="top" requires a session token from YouTube — must fetch it first.
+            # sort="top" requires a session token from YouTube ; must fetch it first.
             resp = await client.post(
                 url_next, json={"context": context, "videoId": video_id}
             )
@@ -218,7 +218,7 @@ async def get_video_comments(
             continuation_token = extract_comment_continuation_token(data)
             if not continuation_token:
                 logger.warning(
-                    "🟡 [comments] no continuation token for %s — comments may be disabled",
+                    "[comments] no continuation token for %s ; comments may be disabled",
                     video_id,
                 )
                 return []
@@ -304,7 +304,7 @@ async def get_video_comments(
         ]
         if pending:
             logger.debug(
-                "🟢 [comments] fetching replies for %d comments in parallel",
+                "[comments] fetching replies for %d comments in parallel",
                 len(pending),
             )
             results = await asyncio.gather(
@@ -330,7 +330,7 @@ async def get_video_comments_batch(
 ) -> Dict:
     """
     Fetch comments for several videos in parallel (bounded by `concurrency`).
-    Videos with disabled/zero comments are skipped — returns whatever has comments.
+    Videos with disabled/zero comments are skipped ; returns whatever has comments.
     Pairs with picking the top N videos by view so the agent never gets stuck
     on a single comment-disabled video.
     """
@@ -362,7 +362,7 @@ async def get_video_comments_batch(
 
     total = sum(v["total"] for v in per_video)
     logger.info(
-        "🟢 [comments/batch] %d ids → %d with comments, %d skipped, %d total comments",
+        "[comments/batch] %d ids -> %d with comments, %d skipped, %d total comments",
         len(video_ids),
         len(per_video),
         len(skipped),

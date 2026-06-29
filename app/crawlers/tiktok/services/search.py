@@ -33,7 +33,7 @@ class SearchService(TikTokBaseService):
         Returns:
             Dict with success, data, count, has_more, cursor
         """
-        # Use macOS Chrome fingerprint — matches the validated working browser request.
+        # Use macOS Chrome fingerprint ; matches the validated working browser request.
         # No search_source/from_page (not present in the working curl).
         params = self._get_mac_search_params()
         params.update(

@@ -2,23 +2,24 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.api.rate_limit_config import endpoint_limit
 from app.config.logger import Logger
-from app.crawlers.tiktok import cache as search_cache
-from app.crawlers.tiktok import tikhub
+import app.crawlers.tiktok.cache as search_cache
+import app.crawlers.tiktok.tikhub as tikhub
 from app.crawlers.tiktok.native import search_native, trending_native
 from app.exceptions import NativeSearchError, TikHubError
-from app.middleware import limiter, verify_api_key
+from app.middleware.auth_middleware import verify_api_key
+from app.middleware.rate_limit import limiter
 from app.schemas.response import ApiResponse
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = Logger.get(__name__)
 
 
-@router.get("/search", summary="TikTok Search (cache → native → TikHub)")
+@router.get("/search", summary="TikTok Search (cache -> native -> TikHub)")
 @limiter.limit(endpoint_limit("tiktok"))
 async def tiktok_search(
     request: Request,
     response: Response,
-    q: str = Query(..., description="Từ khóa tìm kiếm"),
+    q: str = Query(..., description="Search keyword"),
     count: int = Query(20, ge=1, le=100),
     cursor: int = Query(0, ge=0),
     region: str = Query("VN"),
@@ -31,7 +32,7 @@ async def tiktok_search(
 
     cached = search_cache.get(cache_key)
     if cached is not None:
-        logger.info("⚡ [search] cache hit q=%r", q)
+        logger.info("[search] cache hit q=%r", q)
         return ApiResponse.ok(cached)
 
     # 1. Native (free, reverse-engineered)
@@ -42,11 +43,11 @@ async def tiktok_search(
         if result.get("videos"):
             search_cache.put(cache_key, result)
             return ApiResponse.ok(result)
-        logger.warning("🟡 [search] native empty → TikHub fallback")
+        logger.warning("[search] native empty -> TikHub fallback")
     except NativeSearchError as e:
-        logger.warning("🔴 [search] native pool exhausted → TikHub fallback: %s", e)
+        logger.warning("[search] native pool exhausted -> TikHub fallback: %s", e)
     except Exception as e:
-        logger.warning("🔴 [search] native failed (%s) → TikHub fallback", e)
+        logger.warning("[search] native failed (%s) -> TikHub fallback", e)
 
     # 2. TikHub fallback (paid, $0.001/call)
     try:

@@ -1,7 +1,8 @@
+import pytest
+
+
 @pytest.mark.unit
 class TestConfigurationHeaders:
-    """Tests for headers configuration"""
-
     def test_get_youtube_headers_returns_dict(self):
         from app.config.headers import get_youtube_headers
 
@@ -12,7 +13,6 @@ class TestConfigurationHeaders:
         from app.config.headers import get_youtube_headers
 
         headers = get_youtube_headers()
-
         assert "Content-Type" in headers
         assert "Accept" in headers
         assert "Accept-Language" in headers

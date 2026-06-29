@@ -93,13 +93,13 @@ async def get_product_detail(
 
     async with create_tiki_client(headers, cookies, proxy=proxy) as client:
         resp = await client.get(url, params=params)
-        logger.info("🟢 [tiki/detail] GET %s → %s", resp.url, resp.status_code)
+        logger.info("[tiki/detail] GET %s -> %s", resp.url, resp.status_code)
         if resp.status_code == 404 and spid is not None and spid != product_id:
             fallback_url = PRODUCT_DETAIL_URL.format(product_id=spid)
             fallback_params = {k: v for k, v in params.items() if k != "spid"}
             resp = await client.get(fallback_url, params=fallback_params)
             logger.info(
-                "🟢 [tiki/detail] fallback GET %s → %s", resp.url, resp.status_code
+                "[tiki/detail] fallback GET %s -> %s", resp.url, resp.status_code
             )
         resp.raise_for_status()
         data = resp.json()

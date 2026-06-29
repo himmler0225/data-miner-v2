@@ -45,13 +45,13 @@ async def _get_via_watch_page(video_id: str, proxy: str = None) -> Optional[dict
         resp = await client.get(f"{YOUTUBE_BASE_URL}/watch", params=params)
     if resp.status_code != 200:
         logger.warning(
-            "🔴 [detail] watch_page HTTP %s for %s", resp.status_code, video_id
+            "[detail] watch_page HTTP %s for %s", resp.status_code, video_id
         )
         return None
     data = _extract_player_response(resp.text)
     if not data:
         logger.warning(
-            "🔴 [detail] watch_page: ytInitialPlayerResponse not found for %s", video_id
+            "[detail] watch_page: ytInitialPlayerResponse not found for %s", video_id
         )
         return None
     return data
@@ -61,7 +61,7 @@ async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
     try:
         api_key = await get_youtube_api_key(proxy=proxy)
     except Exception as e:
-        logger.warning("🔴 [detail] API key failed: %s", e)
+        logger.warning("[detail] API key failed: %s", e)
         return None
     url = get_youtube_api_url(ENDPOINT_PLAYER, api_key)
     headers = get_youtube_headers()
@@ -74,7 +74,7 @@ async def _get_via_api(video_id: str, proxy: str = None) -> Optional[dict]:
     async with create_httpx_client(proxy=proxy, headers=headers, timeout=10) as client:
         resp = await client.post(url, json=payload)
     if resp.status_code != 200:
-        logger.warning("🔴 [detail] API HTTP %s for %s", resp.status_code, video_id)
+        logger.warning("[detail] API HTTP %s for %s", resp.status_code, video_id)
         return None
     return resp.json()
 
@@ -130,7 +130,7 @@ async def get_video_detail(video_id: str, proxy: str = None) -> dict:
 
     if result.get("error"):
         logger.info(
-            "🟡 [detail] watch_page blocked, trying API%s, trying player API for %s",
+            "[detail] watch_page blocked, trying API%s, trying player API for %s",
             result.get("status"),
             video_id,
         )
@@ -140,7 +140,7 @@ async def get_video_detail(video_id: str, proxy: str = None) -> dict:
 
     if result.get("error"):
         logger.warning(
-            "🔴 [detail] both methods failed for %s (status=%s)",
+            "[detail] both methods failed for %s (status=%s)",
             video_id,
             result.get("status"),
         )

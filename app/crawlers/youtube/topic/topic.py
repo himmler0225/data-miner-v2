@@ -70,19 +70,19 @@ async def browse_topic_channel(
         data = resp.json()
 
     playlists = _extract_playlist_ids(data)
-    logger.info("🟢 [topic] channel=%s playlists=%d", channel_id, len(playlists))
+    logger.info("[topic] channel=%s playlists=%d", channel_id, len(playlists))
 
     if not playlists:
-        logger.warning("🟡 [topic] no playlists found for channel %s", channel_id)
+        logger.warning("[topic] no playlists found for channel %s", channel_id)
         return {"channel_id": channel_id, "playlists": [], "videos": []}
 
     top = playlists[0]
     try:
         videos = await get_videos_from_playlist(top["playlist_id"], proxy=proxy)
-        logger.info("🟢 [topic] playlist=%s videos=%d", top["playlist_id"], len(videos))
+        logger.info("[topic] playlist=%s videos=%d", top["playlist_id"], len(videos))
     except Exception as e:
         logger.warning(
-            "🔴 [topic] failed to fetch playlist %s: %s", top["playlist_id"], e
+            "[topic] failed to fetch playlist %s: %s", top["playlist_id"], e
         )
         videos = []
 

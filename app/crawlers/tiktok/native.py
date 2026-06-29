@@ -1,8 +1,6 @@
 import asyncio
 import dataclasses
 import itertools
-import os
-import sys
 import threading
 import time as _time
 from typing import Dict, List, Optional
@@ -17,9 +15,6 @@ from app.exceptions import NativeSearchError
 
 logger = Logger.get(__name__)
 
-_TIKTOK_DIR = os.path.dirname(__file__)
-if _TIKTOK_DIR not in sys.path:
-    sys.path.insert(0, _TIKTOK_DIR)
 
 _NATIVE_TIMEOUT = TIKTOK_NATIVE_TIMEOUT
 
@@ -28,7 +23,7 @@ async def _proxy_dict() -> Optional[Dict]:
     proxy = await get_proxy(TIKTOK_COUNTRY)
 
     if not proxy:
-        logger.warning("🔴 [tiktok] US proxy not configured — TikTok will likely fail")
+        logger.warning("[tiktok] US proxy not configured ; TikTok will likely fail")
         return None
 
     return {"http": proxy, "https": proxy}
@@ -57,18 +52,18 @@ def _warm_one_identity(proxy: Optional[Dict]) -> Optional[TikTokIdentity]:
     """Warm a session THROUGH `proxy` so ttwid + IP + UA are bound together.
     Uses curl_cffi to impersonate Chrome TLS fingerprint and bypass TikTok WAF."""
     from curl_cffi import requests as cffi_requests
-    from services import TikTokBaseService
+    from app.crawlers.tiktok.services.base import TikTokBaseService
 
     proxy_url = proxy.get("https") or proxy.get("http") if proxy else None
     ua = TikTokBaseService.MAC_SEARCH_UA
 
     proxy_url = (proxy or {}).get("https") or (proxy or {}).get("http")
     logger.info(
-        "🔵 [pool] warming session proxy=%s", proxy_url[:30] if proxy_url else "DIRECT⚠️"
+        "[pool] warming session proxy=%s", proxy_url[:30] if proxy_url else "DIRECT"
     )
     if not proxy_url:
         logger.warning(
-            "🔴 [pool] no proxy available — ttwid will bind to server IP, search will likely fail"
+            "[pool] no proxy available ; ttwid will bind to server IP, search will likely fail"
         )
 
     try:
@@ -92,7 +87,7 @@ def _warm_one_identity(proxy: Optional[Dict]) -> Optional[TikTokIdentity]:
     except Exception as e:
         err_str = str(e)
         if "timed out" in err_str.lower() or "timeout" in err_str.lower():
-            logger.warning("🟡 [pool] warm timeout proxy=%s — retrying once", proxy_url)
+            logger.warning("[pool] warm timeout proxy=%s ; retrying once", proxy_url)
             try:
                 s2 = cffi_requests.Session(impersonate="chrome120", proxies=proxy)
                 s2.headers.update(
@@ -106,11 +101,11 @@ def _warm_one_identity(proxy: Optional[Dict]) -> Optional[TikTokIdentity]:
                 s = s2
             except Exception as e2:
                 logger.warning(
-                    "🔴 [pool] warm retry also failed proxy=%s err=%s", proxy_url, e2
+                    "[pool] warm retry also failed proxy=%s err=%s", proxy_url, e2
                 )
                 return None
         else:
-            logger.warning("🔴 [pool] warm failed proxy=%s err=%s", proxy_url, e)
+            logger.warning("[pool] warm failed proxy=%s err=%s", proxy_url, e)
             return None
 
     cookie_names = (
@@ -119,16 +114,16 @@ def _warm_one_identity(proxy: Optional[Dict]) -> Optional[TikTokIdentity]:
         else {c.name for c in s.cookies}
     )
     if "ttwid" not in cookie_names:
-        logger.warning("🔴 [pool] session warmed without ttwid — discarding")
+        logger.warning("[pool] session warmed without ttwid ; discarding")
         return None
 
     cookies = cookie_names
-    logger.info("🔵 [pool] identity ready cookies=%s", sorted(cookies))
+    logger.info("[pool] identity ready cookies=%s", sorted(cookies))
     return TikTokIdentity(session=s, proxy=proxy, ua=ua)
 
 
 async def warm_session_pool(size: int = _POOL_SIZE) -> int:
-    """Build the identity pool — each warmed through its own sticky proxy."""
+    """Build the identity pool ; each warmed through its own sticky proxy."""
     global _pool, _pool_cycle
     proxies = [await _proxy_dict() for _ in range(size)]
     idents = await asyncio.gather(
@@ -138,7 +133,7 @@ async def warm_session_pool(size: int = _POOL_SIZE) -> int:
     with _pool_lock:
         _pool = good
         _pool_cycle = itertools.cycle(good) if good else None
-    logger.info("🔵 [pool] warmed %d/%d identities", len(good), size)
+    logger.info("[pool] warmed %d/%d identities", len(good), size)
     return len(good)
 
 
@@ -158,7 +153,7 @@ async def session_pool_refresher(interval: float = POOL_REFRESH_INTERVAL) -> Non
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logger.warning("🔴 [pool] refresh error: %s", e)
+            logger.warning("[pool] refresh error: %s", e)
 
 
 def _extract_video(item: Dict) -> Dict:
@@ -203,10 +198,10 @@ def _extract_video(item: Dict) -> Dict:
 def _search_with_identity(
     ident: TikTokIdentity, keyword, count, cursor, region, language
 ) -> Dict:
-    """Runs in a thread. US proxy session already has ttwid — go straight to the
+    """Runs in a thread. US proxy session already has ttwid ; go straight to the
     search API without visiting the search page first (confirmed unnecessary).
-    requests.Session isn't thread-safe → hold the lock."""
-    from services import SearchService
+    requests.Session isn't thread-safe -> hold the lock."""
+    from app.crawlers.tiktok.services.search import SearchService
 
     with ident.lock:
         service = SearchService(
@@ -253,7 +248,7 @@ def _finalize(result: Dict, keyword: str, t0: float, tag: str) -> Dict:
     result["videos"] = [_extract_video(i) for i in raw]
     result["count"] = len(result["videos"])
     logger.info(
-        "🟢 [native] keyword=%r took=%.2fs count=%d success=%s via=%s",
+        "[native] keyword=%r took=%.2fs count=%d success=%s via=%s",
         keyword,
         _time.perf_counter() - t0,
         result["count"],
@@ -287,7 +282,7 @@ async def search_native(
     )
 
     logger.info(
-        "🔵 [native] raw result success=%s data_len=%d",
+        "[native] raw result success=%s data_len=%d",
         result.get("success"),
         len(result.get("data") or []),
     )
@@ -297,7 +292,7 @@ async def search_native(
         ident2 = _next_identity()
         if ident2 is not None and ident2 is not ident:
             logger.info(
-                "🟡 [native] empty → rotating identity & retry identity & retry"
+                "[native] empty result; rotating identity and retrying",
             )
             result = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -321,7 +316,7 @@ async def trending_native(
     region: str = "VN",
     language: str = "vi",
 ) -> Dict:
-    from services import TrendingService
+    from app.crawlers.tiktok.services.trending import TrendingService
 
     service = TrendingService(
         region=region, language=language, proxies=await _proxy_dict()
@@ -335,7 +330,7 @@ async def trending_native(
     result["videos"] = [_extract_video(i) for i in raw]
     result["count"] = len(result["videos"])
     logger.info(
-        "🟢 [trending] region=%s success=%s count=%d",
+        "[trending] region=%s success=%s count=%d",
         region,
         result.get("success"),
         result["count"],

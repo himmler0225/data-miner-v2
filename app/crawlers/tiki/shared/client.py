@@ -31,7 +31,7 @@ async def fetch_guest_token(proxy: Optional[str] = None) -> str:
     if not token:
         raise RuntimeError(f"Failed to get guest token from Tiki: {data}")
 
-    logger.info("🔵 [tiki] guest token acquired: %s...", token[:8])
+    logger.info("[tiki] guest token acquired: %s...", token[:8])
     return token
 
 

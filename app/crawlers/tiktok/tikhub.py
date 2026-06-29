@@ -38,7 +38,7 @@ async def _get(path: str, params: dict = None) -> Dict:
         r = await _client().get(
             path,
             params=params or {},
-            headers=get_tikhub_headers(settings.TIKAP_API_KEY),
+            headers=get_tikhub_headers(settings.TIKHUB_API_KEY),
         )
         r.raise_for_status()
         return r.json()
@@ -61,7 +61,7 @@ async def search_videos(
         quote_via=urllib.parse.quote,
     )
     result = await _get(f"/api/v1/tiktok/app/v3/fetch_video_search_result?{query}")
-    logger.info("🟡 [tikhub] search keyword=%r cursor=%d", keyword, cursor)
+    logger.info("[tikhub] search keyword=%r cursor=%d", keyword, cursor)
     return result
 
 
@@ -83,7 +83,7 @@ async def get_video_info(url: str) -> Dict:
     result = await _get(
         "/api/v1/tiktok/app/v3/fetch_one_video_by_share_url", {"share_url": url}
     )
-    logger.info("🟡 [tikhub] video-info url=%s", url[:60])
+    logger.info("[tikhub] video-info url=%s", url[:60])
     return result
 
 
@@ -92,7 +92,7 @@ async def get_comments(aweme_id: str, cursor: int = 0, count: int = 20) -> Dict:
         "/api/v1/tiktok/app/v3/fetch_video_comments",
         {"aweme_id": aweme_id, "cursor": cursor, "count": count},
     )
-    logger.info("🟡 [tikhub] comments aweme_id=%s cursor=%d", aweme_id, cursor)
+    logger.info("[tikhub] comments aweme_id=%s cursor=%d", aweme_id, cursor)
     return result
 
 
@@ -117,7 +117,7 @@ async def get_profile(unique_id: str) -> Dict:
     result = await _get(
         "/api/v1/tiktok/web/fetch_user_profile", {"unique_id": unique_id}
     )
-    logger.info("🟡 [tikhub] profile unique_id=%s", unique_id)
+    logger.info("[tikhub] profile unique_id=%s", unique_id)
     return result
 
 
@@ -125,7 +125,7 @@ async def get_transcript(aweme_id: str) -> Dict:
     result = await _get(
         "/api/v1/tiktok/app/v3/fetch_video_caption", {"aweme_id": aweme_id}
     )
-    logger.info("🟡 [tikhub] transcript aweme_id=%s", aweme_id)
+    logger.info("[tikhub] transcript aweme_id=%s", aweme_id)
     return result
 
 

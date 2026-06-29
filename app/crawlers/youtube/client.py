@@ -87,7 +87,7 @@ async def _scrape_homepage(proxy: str = None) -> None:
             _client_version_cache["value"] = cv_match.group(1)
             _client_version_cache["expires"] = now + YOUTUBE_KEY_TTL
     except Exception as e:
-        logger.warning("🔴 Homepage scrape failed (using fallback key): %s", e)
+        logger.warning(" Homepage scrape failed (using fallback key): %s", e)
 
 
 async def warm_youtube_session(proxy: str = None) -> None:
