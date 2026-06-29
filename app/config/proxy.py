@@ -188,10 +188,14 @@ class ProxyRegistry:
 
     async def get(self, country: str=DEFAULT_COUNTRY) -> Optional[str]:
         code = country.upper()
-        entries = self._by_country.get(code) or []
+        entries = list(self._by_country.get(code) or [])
         if not entries:
             logger.warning('[Proxy] no pool for country=%s', code)
             return None
+        if len(entries) > 1:
+            random.shuffle(entries)
+            # random start giúp chia tải đều giữa nhiều pool cùng country.
+            self._round_robin[code] = 0
         start = self._round_robin.get(code, 0)
         for offset in range(len(entries)):
             entry = entries[(start + offset) % len(entries)]
