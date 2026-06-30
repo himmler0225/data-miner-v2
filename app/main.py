@@ -12,13 +12,11 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from app.api.admin import router as admin_router
-from app.api.fpt_shop import router as fpt_router
-from app.api.tiki import router as tiki_router
+from app.api.movies import router as movies_router
 from app.api.tiktok import router as tiktok_router
 from app.api.youtube import router as youtube_router
 from app.config.logger import Logger
 from app.config.settings import CORS_ORIGINS, ENABLE_IP_WHITELIST, LOG_LEVEL, RATE_LIMIT_DEFAULT
-from app.middleware.bff_guard import BffGuardMiddleware
 from app.middleware.client_info import ClientInfoMiddleware
 from app.middleware.ip_whitelist import IPWhitelistMiddleware
 from app.middleware.logging_middleware import LoggingMiddleware
@@ -70,6 +68,11 @@ async def lifespan(app: FastAPI):
         logger.warning('[startup] scheduler failed: %s', exc)
     yield
     logger.info('[shutdown] data-miner stopping')
+    try:
+        from app.crawlers.movies.client import close_clients as close_movie_clients
+        await close_movie_clients()
+    except Exception as exc:
+        logger.warning('[shutdown] movie clients close failed: %s', exc)
     if scheduler_started:
         from app.scheduler.scheduler import shutdown_scheduler
         shutdown_scheduler()
@@ -92,14 +95,12 @@ async def add_process_time(request: Request, call_next):
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 app.add_middleware(IPWhitelistMiddleware)
 app.add_middleware(ServiceAuthMiddleware)
-app.add_middleware(BffGuardMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(ClientInfoMiddleware)
 app.include_router(youtube_router, prefix='/api', tags=['YouTube'])
-app.include_router(tiki_router, prefix='/api/tiki', tags=['Tiki'])
-app.include_router(fpt_router, prefix='/api/fpt-shop', tags=['FPT Shop'])
 app.include_router(tiktok_router, prefix='/api/tiktok', tags=['TikTok'])
+app.include_router(movies_router, prefix='/api/movies', tags=['Movies'])
 app.include_router(admin_router)
 
 @app.get('/health', tags=['Health'])

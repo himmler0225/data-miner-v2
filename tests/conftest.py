@@ -20,7 +20,6 @@ def setup_test_env(test_api_key):
     os.environ["ENABLE_SCHEDULER"] = "false"
     os.environ["REQUIRE_SERVICE_AUTH"] = "false"
     os.environ["ENABLE_IP_WHITELIST"] = "false"
-    os.environ["BFF_GUARD_ENABLED"] = "false"
 
 
 @pytest.fixture

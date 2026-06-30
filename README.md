@@ -1,6 +1,6 @@
 # Data Miner API
 
-A production-style **FastAPI** service that scrapes structured data from **YouTube, TikTok, Tiki, and FPT Shop** through their internal (reverse-engineered) APIs and exposes it as a clean, authenticated REST API.
+A production-style **FastAPI** service that scrapes structured data from **YouTube, TikTok, and movie catalogs (KKPhim/OPhim)** through their internal (reverse-engineered) APIs and exposes it as a clean, authenticated REST API.
 
 Built to run behind rotating residential proxies, with centralised remote configuration, global rate limiting, and resilient parsing of constantly-changing upstream responses.
 
@@ -8,7 +8,7 @@ Built to run behind rotating residential proxies, with centralised remote config
 
 ## Highlights
 
-- **4 platforms, one API** — YouTube (InnerTube + HTML), TikTok (native client with TikHub fallback), Tiki e-commerce, and FPT Shop.
+- **3 platforms, one API** — YouTube (InnerTube + HTML), TikTok (native client with TikHub fallback), and Vietnamese movie catalogs (KKPhim / OPhim).
 - **Resilient parsing** — upstream fields are accessed defensively; structural drift surfaces as a typed error (`YouTubeStructureChangedError`) with the exact key path instead of a random `KeyError`.
 - **Rotating proxy pools** — separate VN / US residential pools with sticky TTL pinning and graceful direct-connection fallback.
 - **Remote configuration** — proxies and rate limits are loaded from a Supabase `config` table at startup, so they can change without a redeploy.
@@ -83,14 +83,12 @@ app/
 ├── api/
 │   ├── youtube.py        # /api/videos, /api/channels, /api/playlists
 │   ├── tiktok.py         # /api/tiktok/*
-│   ├── tiki.py           # /api/tiki/*
-│   ├── fpt_shop.py       # /api/fpt-shop/*
+│   ├── movies.py         # /api/movies/*
 │   └── admin/            # /admin/proxy/*  (proxy management)
 ├── crawlers/
 │   ├── youtube/          # InnerTube + HTML scrapers
 │   ├── tiktok/           # native client + TikHub fallback
-│   ├── tiki/             # product search, detail, reviews, sales
-│   └── fpt_shop/         # product search, detail, reviews
+│   └── movies/           # KKPhim + OPPhim catalog client
 ├── config/               # settings, remote, proxy_manager, logger
 ├── middleware/           # auth, rate_limit, logging, ip_whitelist
 ├── scheduler/            # APScheduler (cleanup, health)
@@ -114,17 +112,13 @@ All endpoints require an `X-API-Key` header.
 
 `GET /search` (cache → native → TikHub) · `GET /trending` · `GET /video-info` · `GET /comments` · `GET /profiles/{handle}` · `GET /transcript`
 
-### Tiki — `/api/tiki`
+### Movies — `/api/movies`
 
-`GET /products/search` · `GET /products/sales` · `GET /products/top-choice` · `GET /products/maybe-you-like` · `GET /products/{product_id}` · `GET /products/{product_id}/reviews`
+`GET /search` · `GET /new` · `GET /meta/genres` · `GET /meta/countries` · `GET /meta/image-proxy` · `GET /types/{type}` · `GET /genres/{slug}` · `GET /countries/{slug}` · `GET /years/{year}` · `GET /{slug}`
 
-### FPT Shop — `/api/fpt-shop`
+Aliases for frontends: `GET /type/{type}` · `GET /image/webp`
 
-`GET /products/search` — `q`, `page`, `limit`, `sort_method`, `price_range`  
-`GET /products/detail/{upc}`  
-`GET /products/{product_id}/reviews` — `page`, `limit`, `sort_method`
-
-Per-route rate limit: `15/minute` (same as Tiki/TikTok).
+Per-route rate limit: `60/minute`.
 
 ### Admin — `/admin`
 
