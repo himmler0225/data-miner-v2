@@ -1,28 +1,27 @@
 import os
-from typing import Optional
 
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
 from app.config.logger import Logger
+from app.config.settings import API_KEYS
+from app.middleware.config import API_KEY_HEADER
 
 logger = Logger.get(__name__)
-API_KEY_NAME = "X-API-Key"
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+api_key_header = APIKeyHeader(name=API_KEY_HEADER, auto_error=False)
+
+
+def _valid_keys() -> set[str]:
+    env_keys = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
+    return env_keys if env_keys else set(API_KEYS)
 
 
 def get_api_keys() -> set[str]:
-    raw = os.getenv("API_KEYS", "")
-    keys = {item.strip() for item in raw.split(",") if item.strip()}
-    if not keys:
-        logger.warning("No API_KEYS configured in environment variables")
-        return set()
-    logger.info("Loaded %s API keys from environment", len(keys))
-    return keys
+    return _valid_keys()
 
 
-async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> str:
-    valid_keys = get_api_keys()
+async def verify_api_key(api_key: str | None = Security(api_key_header)) -> str:
+    valid_keys = _valid_keys()
     if not valid_keys:
         logger.error("API authentication attempted but no API keys configured")
         raise HTTPException(
@@ -46,10 +45,8 @@ async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> s
     return api_key
 
 
-def get_optional_api_key(api_key: Optional[str] = Security(api_key_header)) -> Optional[str]:
-    if not api_key:
-        return None
-    valid_keys = get_api_keys()
-    if valid_keys and api_key in valid_keys:
+def get_optional_api_key(api_key: str | None = Security(api_key_header)) -> str | None:
+    valid_keys = _valid_keys()
+    if api_key and api_key in valid_keys:
         return api_key
     return None

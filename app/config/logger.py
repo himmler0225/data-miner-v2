@@ -4,7 +4,7 @@ import logging.handlers
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 _RESET = "\x1b[0m"
 _BOLD = "\x1b[1m"
@@ -19,11 +19,7 @@ _LEVEL_COLOR = {
 }
 
 _EMOJI_RE = re.compile(
-    "["
-    "\U0001F300-\U0001FAFF"
-    "\u2600-\u27BF"
-    "\uFE0F"
-    "]+",
+    "[\U0001f300-\U0001faff\u2600-\u27bf\ufe0f]+",
     flags=re.UNICODE,
 )
 
@@ -59,7 +55,7 @@ class _ColorFormatter(logging.Formatter):
 
 class _JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
             "level": record.levelname,
             "logger": record.name,

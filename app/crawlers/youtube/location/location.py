@@ -1,16 +1,18 @@
 import random
-from typing import Dict, List, Optional
 
 from app.config.constants import CLIENT_NAME, ENDPOINT_SEARCH
 from app.config.headers import get_youtube_headers
 from app.config.logger import Logger
-from app.crawlers.youtube.client import (create_httpx_client, get_client_version,
-                                         get_visitor_data, get_youtube_api_key,
-                                         get_youtube_api_url)
+from app.crawlers.youtube.client import (
+    create_httpx_client,
+    get_client_version,
+    get_visitor_data,
+    get_youtube_api_key,
+    get_youtube_api_url,
+)
 
 from ....exceptions import YouTubeStructureChangedError
-from ..shared.parsers import (extract_continuation_token, get_continuation_items,
-                              parse_video_renderer)
+from ..shared.parsers import extract_continuation_token, get_continuation_items, parse_video_renderer
 from .location_constants import _GL_TIMEZONE
 
 logger = Logger.get(__name__)
@@ -44,7 +46,7 @@ def _get_region_context(gl: str, hl: str) -> dict:
     }
 
 
-def _extract_videos(items: List[Dict]) -> List[Dict]:
+def _extract_videos(items: list[dict]) -> list[dict]:
     results = []
     for item in items:
         if "richItemRenderer" in item:
@@ -61,15 +63,15 @@ async def get_videos_by_region(
     gl: str,
     hl: str,
     query: str,
-    proxy: Optional[str] = None,
+    proxy: str | None = None,
     max_results: int = 50,
-) -> List[Dict]:
+) -> list[dict]:
     """Search YouTube with a specific country context (gl/hl) to get region-relevant results."""
     api_key = await get_youtube_api_key(proxy=proxy)
     search_url = get_youtube_api_url(ENDPOINT_SEARCH, api_key)
     headers = get_youtube_headers()
     context = _get_region_context(gl, hl)
-    collected: List[Dict] = []
+    collected: list[dict] = []
 
     async with create_httpx_client(proxy=proxy, headers=headers) as client:
         resp = await client.post(search_url, json={"context": context, "query": query})
@@ -96,31 +98,23 @@ async def get_videos_by_region(
         continuation = None
         for section in section_contents:
             if "itemSectionRenderer" in section:
-                collected.extend(
-                    _extract_videos(section["itemSectionRenderer"].get("contents", []))
-                )
+                collected.extend(_extract_videos(section["itemSectionRenderer"].get("contents", [])))
             if "continuationItemRenderer" in section:
                 continuation = extract_continuation_token(section)
 
         while continuation and len(collected) < max_results:
-            resp = await client.post(
-                search_url, json={"context": context, "continuation": continuation}
-            )
+            resp = await client.post(search_url, json={"context": context, "continuation": continuation})
             resp.raise_for_status()
             data = resp.json()
             continuation = None
             for section in get_continuation_items(data):
                 if "itemSectionRenderer" in section:
-                    collected.extend(
-                        _extract_videos(
-                            section["itemSectionRenderer"].get("contents", [])
-                        )
-                    )
+                    collected.extend(_extract_videos(section["itemSectionRenderer"].get("contents", [])))
                 if "continuationItemRenderer" in section:
                     continuation = extract_continuation_token(section)
 
     seen: set = set()
-    unique: List[Dict] = []
+    unique: list[dict] = []
     for v in collected:
         vid = v.get("video_id")
         if vid and vid not in seen:

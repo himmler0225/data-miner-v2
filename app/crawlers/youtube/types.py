@@ -1,28 +1,26 @@
-from typing import List, Optional
-
-from typing_extensions import TypedDict
+from typing import TypedDict
 
 
 class ThumbnailItem(TypedDict):
     url: str
-    width: Optional[int]
-    height: Optional[int]
+    width: int | None
+    height: int | None
 
 
 class ChannelInfo(TypedDict):
     channel_id: str
     channel_name: str
-    handle: Optional[str]
-    avatar: Optional[str]
-    banner: Optional[str]
-    subscriber_count: Optional[str]
+    handle: str | None
+    avatar: str | None
+    banner: str | None
+    subscriber_count: str | None
     description: str
 
 
 class TrendingVideo(TypedDict):
     video_id: str
     title: str
-    thumbnail: List[ThumbnailItem]
+    thumbnail: list[ThumbnailItem]
     channel_name: str
     views: str
     published_time: str
@@ -39,7 +37,7 @@ class SearchVideo(TypedDict):
     channel_id: str
     published_time: str
     description_snippet: str
-    thumbnails: List[ThumbnailItem]
+    thumbnails: list[ThumbnailItem]
 
 
 class VideoDetail(TypedDict):
@@ -60,7 +58,7 @@ class VideoDetailError(TypedDict):
 class CommentReply(TypedDict):
     comment_id: str
     author: str
-    avatar: Optional[str]
+    avatar: str | None
     content: str
     published_time: str
     likes: int
@@ -69,9 +67,9 @@ class CommentReply(TypedDict):
 class Comment(TypedDict):
     comment_id: str
     author: str
-    avatar: Optional[str]
+    avatar: str | None
     content: str
     published_time: str
     likes: int
     replies_count: int
-    replies: List[CommentReply]
+    replies: list[CommentReply]

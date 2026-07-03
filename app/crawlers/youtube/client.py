@@ -2,7 +2,6 @@ import asyncio
 import random
 import re
 import time
-from typing import Optional
 
 import httpx
 
@@ -30,9 +29,7 @@ _visitor_data_cache: dict = {"value": "", "expires": 0.0}
 _client_version_cache: dict = {"value": "", "expires": 0.0}
 
 
-def _get_pooled_client(
-    proxy: Optional[str], headers: Optional[dict], timeout: int
-) -> httpx.AsyncClient:
+def _get_pooled_client(proxy: str | None, headers: dict | None, timeout: int) -> httpx.AsyncClient:
     key = proxy or ""
     if key not in _client_pool or _client_pool[key].is_closed:
         limits = httpx.Limits(
@@ -100,22 +97,16 @@ async def warm_youtube_session(proxy: str = None) -> None:
         await _scrape_homepage(proxy)
 
 
-def get_visitor_data() -> Optional[str]:
+def get_visitor_data() -> str | None:
     """Return cached visitorData if fresh, else None."""
-    if (
-        _visitor_data_cache["value"]
-        and time.monotonic() < _visitor_data_cache["expires"]
-    ):
+    if _visitor_data_cache["value"] and time.monotonic() < _visitor_data_cache["expires"]:
         return _visitor_data_cache["value"]
     return None
 
 
 def get_client_version() -> str:
     """Return dynamic client version from homepage, fallback to constant."""
-    if (
-        _client_version_cache["value"]
-        and time.monotonic() < _client_version_cache["expires"]
-    ):
+    if _client_version_cache["value"] and time.monotonic() < _client_version_cache["expires"]:
         return _client_version_cache["value"]
     return CLIENT_VERSION
 
@@ -134,9 +125,7 @@ _TIMEZONES = [
 ]
 
 
-def get_context(
-    original_url: Optional[str] = None, user_agent: Optional[str] = None
-) -> dict:
+def get_context(original_url: str | None = None, user_agent: str | None = None) -> dict:
     """Full InnerTube WEB context. browse endpoints require user + request sections."""
     client: dict = {
         "hl": CLIENT_HL,
@@ -146,9 +135,7 @@ def get_context(
         "platform": "DESKTOP",
         "clientFormFactor": "UNKNOWN_FORM_FACTOR",
         "timeZone": random.choice(_TIMEZONES),
-        "utcOffsetMinutes": random.choice(
-            [-300, -360, -420, 0, 60, 120, 420, 540, 600]
-        ),
+        "utcOffsetMinutes": random.choice([-300, -360, -420, 0, 60, 120, 420, 540, 600]),
         "screenWidthPoints": random.choice([1280, 1366, 1440, 1536, 1920, 2560]),
         "screenHeightPoints": random.choice([720, 768, 864, 900, 1080, 1440]),
         "screenPixelDensity": random.choice([1, 2]),
@@ -206,9 +193,7 @@ class _PooledClientContext:
         pass
 
 
-def create_httpx_client(
-    proxy: str = None, headers: dict = None, timeout: int = DEFAULT_TIMEOUT
-):
+def create_httpx_client(proxy: str = None, headers: dict = None, timeout: int = DEFAULT_TIMEOUT):
     proxy_url = get_httpx_proxies(proxy)
     if not headers:
         return _PooledClientContext(_get_pooled_client(proxy_url, None, timeout))

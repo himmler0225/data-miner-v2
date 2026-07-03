@@ -1,16 +1,13 @@
 import json
-import os
-from typing import Optional
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config.logger import Logger
 from app.config.settings import REQUIRE_SERVICE_AUTH
+from app.middleware.config import PUBLIC_PATHS
 from app.middleware.service_tokens import validate_service_identity
 
 logger = Logger.get(__name__)
-
-PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
 
 
 async def _send_json(send: Send, status: int, detail: str) -> None:
@@ -38,11 +35,7 @@ class ServiceAuthMiddleware:
             return
 
         path = scope.get("path", "")
-        if path in PUBLIC_PATHS:
-            await self.app(scope, receive, send)
-            return
-
-        if not path.startswith("/api/"):
+        if path in PUBLIC_PATHS or not path.startswith("/api/"):
             await self.app(scope, receive, send)
             return
 

@@ -1,11 +1,8 @@
-from typing import Dict
-
 from app.config.constants import ENDPOINT_BROWSE
-from app.crawlers.youtube.client import (create_httpx_client, get_context,
-                                         get_youtube_api_key, get_youtube_api_url)
+from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 
 
-def parse_channel_info(data) -> Dict:
+def parse_channel_info(data) -> dict:
     header = data.get("header", {}).get("pageHeaderRenderer", {})
     metadata = data.get("metadata", {}).get("channelMetadataRenderer", {})
 
@@ -33,9 +30,7 @@ def parse_channel_info(data) -> Dict:
     handle = None
     subscribers = None
     try:
-        metadata_rows = header["content"]["pageHeaderViewModel"]["metadata"][
-            "contentMetadataViewModel"
-        ]["metadataRows"]
+        metadata_rows = header["content"]["pageHeaderViewModel"]["metadata"]["contentMetadataViewModel"]["metadataRows"]
         for row in metadata_rows:
             for part in row.get("metadataParts", []):
                 text = part.get("text", {}).get("content", "")
@@ -57,7 +52,7 @@ def parse_channel_info(data) -> Dict:
     }
 
 
-async def get_channel_info(channel_id: str, proxy: str = None) -> Dict:
+async def get_channel_info(channel_id: str, proxy: str = None) -> dict:
     api_key = await get_youtube_api_key(proxy=proxy)
     browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
     payload = {"context": get_context(), "browseId": channel_id}

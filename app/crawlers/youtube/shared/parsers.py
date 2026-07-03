@@ -1,5 +1,3 @@
-from typing import Dict, List, Optional
-
 from app.config.constants import YOUTUBE_BASE_URL
 from app.crawlers.youtube.utils import parse_view_count
 
@@ -12,17 +10,12 @@ def join_runs(node: dict) -> str:
     return node.get("simpleText", "") if isinstance(node, dict) else ""
 
 
-def get_channel_id_from_owner(video: dict) -> Optional[str]:
+def get_channel_id_from_owner(video: dict) -> str | None:
     owner_runs = video.get("ownerText", {}).get("runs", [{}])
-    return (
-        owner_runs[0]
-        .get("navigationEndpoint", {})
-        .get("browseEndpoint", {})
-        .get("browseId")
-    )
+    return owner_runs[0].get("navigationEndpoint", {}).get("browseEndpoint", {}).get("browseId")
 
 
-def extract_continuation_token(item: dict) -> Optional[str]:
+def extract_continuation_token(item: dict) -> str | None:
     return (
         item.get("continuationItemRenderer", {})
         .get("continuationEndpoint", {})
@@ -31,27 +24,15 @@ def extract_continuation_token(item: dict) -> Optional[str]:
     )
 
 
-def get_continuation_items(data: dict) -> List[dict]:
-    commands = (
-        data.get("onResponseReceivedCommands")
-        or data.get("onResponseReceivedActions")
-        or []
-    )
-    return (
-        (
-            commands[0]
-            .get("appendContinuationItemsAction", {})
-            .get("continuationItems", [])
-        )
-        if commands
-        else []
-    )
+def get_continuation_items(data: dict) -> list[dict]:
+    commands = data.get("onResponseReceivedCommands") or data.get("onResponseReceivedActions") or []
+    return (commands[0].get("appendContinuationItemsAction", {}).get("continuationItems", [])) if commands else []
 
 
-def parse_video_renderer(video: dict) -> Dict:
-    views_raw = video.get("viewCountText", {}).get("simpleText", "") or video.get(
-        "shortViewCountText", {}
-    ).get("simpleText", "")
+def parse_video_renderer(video: dict) -> dict:
+    views_raw = video.get("viewCountText", {}).get("simpleText", "") or video.get("shortViewCountText", {}).get(
+        "simpleText", ""
+    )
     video_id = video.get("videoId")
     return {
         "video_id": video_id,

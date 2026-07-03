@@ -1,5 +1,4 @@
 import json
-from typing import Optional, Set
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -11,7 +10,7 @@ from app.middleware.service_tokens import validate_service_identity
 logger = Logger.get(__name__)
 
 
-def _build_ip_set() -> Set[str]:
+def _build_ip_set() -> set[str]:
     ips = set(_IPS_LIST)
     if not ips:
         logger.warning("No IP whitelist configured - all IPs will be allowed")
@@ -46,9 +45,7 @@ def _get_client_ip_from_scope(scope: Scope, headers: dict) -> str:
 
 
 async def _send_403(send: Send) -> None:
-    body = json.dumps(
-        {"detail": "Access denied: IP address or service not whitelisted"}
-    ).encode()
+    body = json.dumps({"detail": "Access denied: IP address or service not whitelisted"}).encode()
     await send(
         {
             "type": "http.response.start",

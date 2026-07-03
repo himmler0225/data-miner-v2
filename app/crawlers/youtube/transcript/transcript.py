@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 import asyncio
-from typing import Dict, List, Optional
 
 from app.config.logger import Logger
 from app.config.proxy import get_proxy
@@ -11,11 +8,10 @@ logger = Logger.get(__name__)
 _LANG_PRIORITY = ["vi", "en", "a.vi", "a.en"]
 
 
-def _fetch_sync(video_id: str, proxy_url: Optional[str] = None) -> Optional[Dict]:
+def _fetch_sync(video_id: str, proxy_url: str | None = None) -> dict | None:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
-        from youtube_transcript_api._errors import (NoTranscriptFound,
-                                                    TranscriptsDisabled)
+        from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
 
         proxy_config = None
         if proxy_url:
@@ -42,7 +38,7 @@ def _fetch_sync(video_id: str, proxy_url: Optional[str] = None) -> Optional[Dict
                     "char_count": len(text),
                     "segments": len(segments),
                 }
-            except (NoTranscriptFound, Exception):
+            except NoTranscriptFound, Exception:
                 continue
 
         try:
@@ -64,7 +60,7 @@ def _fetch_sync(video_id: str, proxy_url: Optional[str] = None) -> Optional[Dict
         return None
 
 
-async def get_transcript(video_id: str) -> Optional[Dict]:
+async def get_transcript(video_id: str) -> dict | None:
     proxy_url = await get_proxy()
     result = await asyncio.to_thread(_fetch_sync, video_id, proxy_url)
     if result:
@@ -80,9 +76,9 @@ async def get_transcript(video_id: str) -> Optional[Dict]:
 
 
 async def get_transcript_batch(
-    video_ids: List[str],
+    video_ids: list[str],
     concurrency: int = 3,
-) -> Dict[str, Optional[Dict]]:
+) -> dict[str, dict | None]:
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(vid: str):
@@ -92,7 +88,5 @@ async def get_transcript_batch(
     pairs = await asyncio.gather(*[_one(v) for v in video_ids])
     results = {vid: data for vid, data in pairs}
     found = sum(1 for v in results.values() if v)
-    logger.info(
-        "[transcript/batch] %d/%d videos have transcripts", found, len(video_ids)
-    )
+    logger.info("[transcript/batch] %d/%d videos have transcripts", found, len(video_ids))
     return results

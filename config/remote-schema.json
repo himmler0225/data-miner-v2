@@ -6,7 +6,7 @@
       "store": "proxy_pools"
     },
     "RATE_LIMIT": {
-      "bind": { "type": "rate_limit_full", "module": "settings" },
+      "bind": { "type": "rate_limit_full", "module": "rate_limits" },
       "store": "rate_limit"
     }
   },

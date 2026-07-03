@@ -1,17 +1,13 @@
-from typing import Dict, List
-
 from app.config.constants import ENDPOINT_SEARCH
 from app.config.headers import get_youtube_headers
-from app.crawlers.youtube.client import (create_httpx_client, get_context,
-                                         get_youtube_api_key, get_youtube_api_url)
+from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 
 from ....exceptions import YouTubeStructureChangedError
-from ..shared.parsers import (extract_continuation_token, get_continuation_items,
-                              parse_video_renderer)
+from ..shared.parsers import extract_continuation_token, get_continuation_items, parse_video_renderer
 from .search_constants import SORT_OPTIONS
 
 
-def extract_video_items(items: List[Dict]) -> List[Dict]:
+def extract_video_items(items: list[dict]) -> list[dict]:
     results = []
     for item in items:
         if "richItemRenderer" in item:
@@ -21,19 +17,13 @@ def extract_video_items(items: List[Dict]) -> List[Dict]:
         if not video or not video.get("videoId"):
             continue
         parsed = parse_video_renderer(video)
-        runs = (
-            video.get("detailedMetadataSnippets", [{}])[0]
-            .get("snippetText", {})
-            .get("runs", [])
-        )
+        runs = video.get("detailedMetadataSnippets", [{}])[0].get("snippetText", {}).get("runs", [])
         parsed["description_snippet"] = "".join(r.get("text", "") for r in runs)
         results.append(parsed)
     return results
 
 
-async def search_youtube(
-    query: str, max_results: int = 20, proxy: str = None, sort: str = "relevance"
-) -> List[Dict]:
+async def search_youtube(query: str, max_results: int = 20, proxy: str = None, sort: str = "relevance") -> list[dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     search_url = get_youtube_api_url(ENDPOINT_SEARCH, api_key)
     headers = get_youtube_headers()
@@ -66,9 +56,7 @@ async def search_youtube(
 
         for section in sections:
             if "itemSectionRenderer" in section:
-                collected += extract_video_items(
-                    section["itemSectionRenderer"].get("contents", [])
-                )
+                collected += extract_video_items(section["itemSectionRenderer"].get("contents", []))
             if "continuationItemRenderer" in section:
                 continuation = extract_continuation_token(section)
 
@@ -81,9 +69,7 @@ async def search_youtube(
             data = resp.json()
             for section in get_continuation_items(data):
                 if "itemSectionRenderer" in section:
-                    collected += extract_video_items(
-                        section["itemSectionRenderer"].get("contents", [])
-                    )
+                    collected += extract_video_items(section["itemSectionRenderer"].get("contents", []))
                 if "continuationItemRenderer" in section:
                     continuation = extract_continuation_token(section)
 

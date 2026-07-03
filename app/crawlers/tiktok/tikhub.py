@@ -1,29 +1,23 @@
-from __future__ import annotations
-
 import urllib.parse
-from typing import Dict, List, Optional
 
 import httpx
 
 import app.config.settings as settings
-from app.config.constants import (TIKHUB_MAX_CONN, TIKHUB_MAX_KEEPALIVE,
-                                  TIKHUB_TIMEOUT)
+from app.crawlers.tiktok.config import TIKHUB_BASE_URL, TIKHUB_MAX_CONN, TIKHUB_MAX_KEEPALIVE, TIKHUB_TIMEOUT
 from app.config.headers import get_tikhub_headers
 from app.config.logger import Logger
 from app.exceptions import TikHubError
 
 logger = Logger.get(__name__)
 
-_BASE = "https://api.tikhub.io"
-
-_http: Optional[httpx.AsyncClient] = None
+_http: httpx.AsyncClient | None = None
 
 
 def _client() -> httpx.AsyncClient:
     global _http
     if _http is None or _http.is_closed:
         _http = httpx.AsyncClient(
-            base_url=_BASE,
+            base_url=TIKHUB_BASE_URL,
             timeout=TIKHUB_TIMEOUT,
             limits=httpx.Limits(
                 max_connections=TIKHUB_MAX_CONN,
@@ -33,7 +27,7 @@ def _client() -> httpx.AsyncClient:
     return _http
 
 
-async def _get(path: str, params: dict = None) -> Dict:
+async def _get(path: str, params: dict = None) -> dict:
     try:
         r = await _client().get(
             path,
@@ -55,7 +49,7 @@ async def search_videos(
     cursor: int = 0,
     count: int = 20,
     sort_type: int = 0,
-) -> Dict:
+) -> dict:
     query = urllib.parse.urlencode(
         {"keyword": keyword, "cursor": cursor, "count": count, "sort_type": sort_type},
         quote_via=urllib.parse.quote,
@@ -65,7 +59,7 @@ async def search_videos(
     return result
 
 
-def format_search(raw: Dict) -> Dict:
+def format_search(raw: dict) -> dict:
     data = raw.get("data") or {}
     items = data.get("aweme_list") or []
     videos = [_fmt_video(v) for v in items if v.get("aweme_id")]
@@ -79,15 +73,13 @@ def format_search(raw: Dict) -> Dict:
     }
 
 
-async def get_video_info(url: str) -> Dict:
-    result = await _get(
-        "/api/v1/tiktok/app/v3/fetch_one_video_by_share_url", {"share_url": url}
-    )
+async def get_video_info(url: str) -> dict:
+    result = await _get("/api/v1/tiktok/app/v3/fetch_one_video_by_share_url", {"share_url": url})
     logger.info("[tikhub] video-info url=%s", url[:60])
     return result
 
 
-async def get_comments(aweme_id: str, cursor: int = 0, count: int = 20) -> Dict:
+async def get_comments(aweme_id: str, cursor: int = 0, count: int = 20) -> dict:
     result = await _get(
         "/api/v1/tiktok/app/v3/fetch_video_comments",
         {"aweme_id": aweme_id, "cursor": cursor, "count": count},
@@ -96,7 +88,7 @@ async def get_comments(aweme_id: str, cursor: int = 0, count: int = 20) -> Dict:
     return result
 
 
-def format_comments(raw: Dict) -> List[Dict]:
+def format_comments(raw: dict) -> list[dict]:
     data = raw.get("data") or {}
     comments = data.get("comments") or []
     return [
@@ -113,23 +105,19 @@ def format_comments(raw: Dict) -> List[Dict]:
     ]
 
 
-async def get_profile(unique_id: str) -> Dict:
-    result = await _get(
-        "/api/v1/tiktok/web/fetch_user_profile", {"unique_id": unique_id}
-    )
+async def get_profile(unique_id: str) -> dict:
+    result = await _get("/api/v1/tiktok/web/fetch_user_profile", {"unique_id": unique_id})
     logger.info("[tikhub] profile unique_id=%s", unique_id)
     return result
 
 
-async def get_transcript(aweme_id: str) -> Dict:
-    result = await _get(
-        "/api/v1/tiktok/app/v3/fetch_video_caption", {"aweme_id": aweme_id}
-    )
+async def get_transcript(aweme_id: str) -> dict:
+    result = await _get("/api/v1/tiktok/app/v3/fetch_video_caption", {"aweme_id": aweme_id})
     logger.info("[tikhub] transcript aweme_id=%s", aweme_id)
     return result
 
 
-def format_transcript(raw: Dict) -> Optional[Dict]:
+def format_transcript(raw: dict) -> dict | None:
     data = raw.get("data") or {}
     captions = data.get("caption_info_list") or []
     if not captions:
@@ -152,19 +140,15 @@ def format_transcript(raw: Dict) -> Optional[Dict]:
     }
 
 
-def _fmt_video(v: Dict) -> Dict:
+def _fmt_video(v: dict) -> dict:
     author = v.get("author") or {}
     stats = v.get("statistics") or {}
     music = v.get("music") or {}
     vid = v.get("video") or {}
-    tags = [
-        t["hashtag_name"]
-        for t in v.get("text_extra", [])
-        if isinstance(t, dict) and t.get("hashtag_name")
-    ]
+    tags = [t["hashtag_name"] for t in v.get("text_extra", []) if isinstance(t, dict) and t.get("hashtag_name")]
     uid = author.get("unique_id") or "_"
 
-    def _cover(obj: Dict) -> Optional[str]:
+    def _cover(obj: dict) -> str | None:
         urls = (obj or {}).get("url_list") or []
         return urls[0] if urls else None
 

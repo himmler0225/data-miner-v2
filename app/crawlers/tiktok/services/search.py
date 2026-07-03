@@ -3,7 +3,7 @@ TikTok Search Service
 """
 
 import time
-from typing import Any, Dict
+from typing import Any
 
 from .base import TikTokBaseService
 
@@ -18,8 +18,8 @@ class SearchService(TikTokBaseService):
         use_fresh_token: bool = True,
         cursor: int = 0,
         offset: int = 0,
-        proxies: Dict[str, str] = None,
-    ) -> Dict[str, Any]:
+        proxies: dict[str, str] = None,
+    ) -> dict[str, Any]:
         """
         Search TikTok videos
 
@@ -80,8 +80,8 @@ class SearchService(TikTokBaseService):
         max_pages: int = 10,
         use_fresh_token: bool = True,
         delay: float = 1.0,
-        proxies: Dict[str, str] = None,
-    ) -> Dict[str, Any]:
+        proxies: dict[str, str] = None,
+    ) -> dict[str, Any]:
         """
         Search TikTok videos with pagination to get more results
 

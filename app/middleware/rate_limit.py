@@ -4,7 +4,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.config.logger import Logger
-from app.config.settings import RATE_LIMIT_BURST, RATE_LIMIT_DEFAULT, RATE_LIMIT_STORAGE
+from app.config.rate_limits import RATE_LIMIT_BURST, RATE_LIMIT_DEFAULT
+from app.config.settings import RATE_LIMIT_STORAGE
 
 logger = Logger.get(__name__)
 

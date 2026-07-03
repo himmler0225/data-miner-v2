@@ -1,18 +1,18 @@
 import threading
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
-from app.config.constants import TIKTOK_CACHE_MAX_SIZE, TIKTOK_CACHE_TTL
+from app.crawlers.tiktok.config import TIKTOK_CACHE_MAX_SIZE, TIKTOK_CACHE_TTL
 
-_store: Dict[str, Tuple[float, Any]] = {}
+_store: dict[str, tuple[float, Any]] = {}
 _lock = threading.Lock()
 
 
-def _key(parts: Tuple) -> str:
+def _key(parts: tuple) -> str:
     return "|".join(str(p) for p in parts)
 
 
-def get(parts: Tuple) -> Optional[Any]:
+def get(parts: tuple) -> Any | None:
     k = _key(parts)
     with _lock:
         entry = _store.get(k)
@@ -23,7 +23,7 @@ def get(parts: Tuple) -> Optional[Any]:
     return None
 
 
-def put(parts: Tuple, value: Any) -> None:
+def put(parts: tuple, value: Any) -> None:
     k = _key(parts)
     with _lock:
         if len(_store) >= TIKTOK_CACHE_MAX_SIZE:

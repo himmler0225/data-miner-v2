@@ -1,7 +1,6 @@
 import hashlib
 import random
 import time
-from typing import List
 
 # Key indices used: 9, 69, 51, 92 (for CHACHA_INITIAL_STATE)
 #                  44, 74, 10, 62, 42, 17, 2, 21, 3, 70, 50, 32 (for PRNG initialization)
@@ -112,7 +111,7 @@ CHACHA_INITIAL_STATE = [
 MASK_32_BIT = 0xFFFFFFFF
 
 
-def initialize_prng_state() -> List[int]:
+def initialize_prng_state() -> list[int]:
     current_timestamp_ms = int(time.time() * 1000)
     return [
         CRYPTO_CONSTANTS[44],
@@ -146,7 +145,7 @@ def rotate_left(value: int, shift_amount: int) -> int:
     return ensure_32bit((value << shift_amount) | (value >> (32 - shift_amount)))
 
 
-def chacha_quarter_round(state: List[int], a: int, b: int, c: int, d: int) -> None:
+def chacha_quarter_round(state: list[int], a: int, b: int, c: int, d: int) -> None:
     state[a] = ensure_32bit(state[a] + state[b])
     state[d] = rotate_left(state[d] ^ state[a], 16)
     state[c] = ensure_32bit(state[c] + state[d])
@@ -157,7 +156,7 @@ def chacha_quarter_round(state: List[int], a: int, b: int, c: int, d: int) -> No
     state[b] = rotate_left(state[b] ^ state[c], 7)
 
 
-def chacha_block_function(initial_state: List[int], num_rounds: int) -> List[int]:
+def chacha_block_function(initial_state: list[int], num_rounds: int) -> list[int]:
     working_state = initial_state[:]
     round_count = 0
 
@@ -185,7 +184,7 @@ def chacha_block_function(initial_state: List[int], num_rounds: int) -> List[int
     return working_state
 
 
-def increment_counter(state: List[int]) -> None:
+def increment_counter(state: list[int]) -> None:
     state[12] = ensure_32bit(state[12] + 1)
 
 
@@ -205,7 +204,7 @@ def generate_random_float() -> float:
     return (random_value + 4294967296 * high_bits) / (2**53)
 
 
-def convert_number_to_bytes(value: int) -> List[int]:
+def convert_number_to_bytes(value: int) -> list[int]:
     if value < 255 * 255:
         return [(value >> 8) & 0xFF, value & 0xFF]
     else:
@@ -225,7 +224,7 @@ def string_to_big_endian_int(input_string: str) -> int:
     return accumulator & 0xFFFFFFFF
 
 
-def chacha_encrypt_data(key_words: List[int], rounds: int, data: bytearray) -> None:
+def chacha_encrypt_data(key_words: list[int], rounds: int, data: bytearray) -> None:
     full_words_count = len(data) // 4
     remaining_bytes = len(data) % 4
     total_words = (len(data) + 3) // 4
@@ -235,10 +234,7 @@ def chacha_encrypt_data(key_words: List[int], rounds: int, data: bytearray) -> N
     for i in range(full_words_count):
         byte_index = 4 * i
         word_array[i] = (
-            data[byte_index]
-            | (data[byte_index + 1] << 8)
-            | (data[byte_index + 2] << 16)
-            | (data[byte_index + 3] << 24)
+            data[byte_index] | (data[byte_index + 1] << 8) | (data[byte_index + 2] << 16) | (data[byte_index + 3] << 24)
         )
 
     if remaining_bytes:
@@ -278,9 +274,7 @@ def chacha_encrypt_data(key_words: List[int], rounds: int, data: bytearray) -> N
             data[base_index + byte_offset] = (word_value >> (8 * byte_offset)) & 0xFF
 
 
-def encrypt_string_with_chacha(
-    key_words: List[int], rounds: int, input_string: str
-) -> str:
+def encrypt_string_with_chacha(key_words: list[int], rounds: int, input_string: str) -> str:
     combined_state = CHACHA_INITIAL_STATE + key_words
     data_bytes = bytearray([ord(char) for char in input_string])
     chacha_encrypt_data(combined_state, rounds, data_bytes)
@@ -313,9 +307,7 @@ def get_X_Gnarly(
     add_to_object(4, hashlib.md5(request_body.encode()).hexdigest())  # Field 4
     add_to_object(5, hashlib.md5(user_agent.encode()).hexdigest())  # Field 5
     add_to_object(6, timestamp_ms // 1000)  # Field 6
-    add_to_object(
-        7, canvas_value
-    )  # Field 7 > canvas_value placeholder and in web 1938040196 so idk its this xD
+    add_to_object(7, canvas_value)  # Field 7 > canvas_value placeholder and in web 1938040196 so idk its this xD
     add_to_object(8, timestamp_ms % 2147483648)  # Field 8
     add_to_object(9, version)  # Field 9
 
@@ -325,9 +317,7 @@ def get_X_Gnarly(
         checksum = 0
         for i in range(1, 12):
             value = data_object[i]
-            xor_value = (
-                value if isinstance(value, int) else string_to_big_endian_int(value)
-            )
+            xor_value = value if isinstance(value, int) else string_to_big_endian_int(value)
             checksum ^= xor_value
         add_to_object(12, checksum & 0xFFFFFFFF)  # Field 12
     elif version == "5.1.2":
@@ -336,9 +326,7 @@ def get_X_Gnarly(
         checksum = 0
         for i in range(1, 12):
             value = data_object[i]
-            xor_value = (
-                value if isinstance(value, int) else string_to_big_endian_int(value)
-            )
+            xor_value = value if isinstance(value, int) else string_to_big_endian_int(value)
             checksum ^= xor_value
         add_to_object(12, checksum & 0xFFFFFFFF)  # Field 12
     elif version != "5.1.0":
@@ -388,19 +376,13 @@ def get_X_Gnarly(
 
     encryption_rounds = round_accumulator + 5
 
-    encrypted_data = encrypt_string_with_chacha(
-        encryption_key_words, encryption_rounds, base_string
-    )
+    encrypted_data = encrypt_string_with_chacha(encryption_key_words, encryption_rounds, base_string)
 
     insertion_position = 0
     for byte_value in key_bytes:
-        insertion_position = (insertion_position + byte_value) % (
-            len(encrypted_data) + 1
-        )
+        insertion_position = (insertion_position + byte_value) % (len(encrypted_data) + 1)
     for char in encrypted_data:
-        insertion_position = (insertion_position + ord(char)) % (
-            len(encrypted_data) + 1
-        )
+        insertion_position = (insertion_position + ord(char)) % (len(encrypted_data) + 1)
 
     key_string = "".join(chr(byte) for byte in key_bytes)
     final_string = (
@@ -410,18 +392,12 @@ def get_X_Gnarly(
         + encrypted_data[insertion_position:]
     )
 
-    custom_alphabet = (
-        "u09tbS3UvgDEe6r-ZVMXzLpsAohTn7mdINQlW412GqBjfYiyk8JORCF5/xKHwacP="
-    )
+    custom_alphabet = "u09tbS3UvgDEe6r-ZVMXzLpsAohTn7mdINQlW412GqBjfYiyk8JORCF5/xKHwacP="
     encoded_output = []
 
     full_block_length = (len(final_string) // 3) * 3
     for i in range(0, full_block_length, 3):
-        three_byte_block = (
-            ord(final_string[i]) << 16
-            | ord(final_string[i + 1]) << 8
-            | ord(final_string[i + 2])
-        )
+        three_byte_block = ord(final_string[i]) << 16 | ord(final_string[i + 1]) << 8 | ord(final_string[i + 2])
         encoded_output.append(custom_alphabet[(three_byte_block >> 18) & 63])
         encoded_output.append(custom_alphabet[(three_byte_block >> 12) & 63])
         encoded_output.append(custom_alphabet[(three_byte_block >> 6) & 63])

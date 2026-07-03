@@ -2,7 +2,7 @@ import json
 import random
 import string
 import time
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import requests
@@ -11,7 +11,6 @@ from app.crawlers.tiktok.lib.signatures.gnarly import get_X_Gnarly
 
 
 class TikTokBaseService:
-
     BASE_URL = "https://www.tiktok.com"
     MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
     PC_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
@@ -21,7 +20,7 @@ class TikTokBaseService:
         region: str = "VN",
         language: str = "vi",
         proxies: dict = None,
-        session: "requests.Session" = None,
+        session: requests.Session = None,
     ):
         self.region = region
         self.language = language
@@ -96,17 +95,13 @@ class TikTokBaseService:
                 "Connection": "keep-alive",
             }
 
-            response = self.session.get(
-                self.BASE_URL, headers=headers, timeout=10, allow_redirects=True
-            )
+            response = self.session.get(self.BASE_URL, headers=headers, timeout=10, allow_redirects=True)
 
             if "Set-Cookie" in response.headers:
                 set_cookie = response.headers["Set-Cookie"]
                 for cookie_part in set_cookie.split(";"):
                     if "msToken=" in cookie_part:
-                        ms_token = (
-                            cookie_part.split("msToken=")[1].split(";")[0].strip()
-                        )
+                        ms_token = cookie_part.split("msToken=")[1].split(";")[0].strip()
                         return ms_token
 
             if "msToken" in self.session.cookies:
@@ -118,7 +113,7 @@ class TikTokBaseService:
         except Exception:
             return self._generate_fake_mstoken()
 
-    def _get_mobile_params(self) -> Dict[str, str]:
+    def _get_mobile_params(self) -> dict[str, str]:
         return {
             "aid": "1988",
             "app_name": "tiktok_web",
@@ -154,7 +149,7 @@ class TikTokBaseService:
             "web_search_code": self._get_web_search_code(),
         }
 
-    def _get_pc_params(self) -> Dict[str, str]:
+    def _get_pc_params(self) -> dict[str, str]:
         return {
             "aid": "1988",
             "app_name": "tiktok_web",
@@ -188,7 +183,7 @@ class TikTokBaseService:
             "tz_name": self._get_timezone_name(),
         }
 
-    def _get_mac_search_params(self) -> Dict[str, str]:
+    def _get_mac_search_params(self) -> dict[str, str]:
         """Fingerprint matching the working browser curl: macOS Chrome, web_pc,
         web_search_code included. No search_source/from_page."""
         return {
@@ -228,7 +223,7 @@ class TikTokBaseService:
 
     MAC_SEARCH_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
 
-    def _sign_url(self, url: str, user_agent: str = None) -> Dict[str, str]:
+    def _sign_url(self, url: str, user_agent: str = None) -> dict[str, str]:
         if user_agent is None:
             user_agent = self.MOBILE_UA
 
@@ -236,13 +231,9 @@ class TikTokBaseService:
         query_string = parsed.query
 
         signed_params = Signer.sign(query_string, user_agent)
-        xbogus = (
-            signed_params.split("X-Bogus=")[-1] if "X-Bogus=" in signed_params else ""
-        )
+        xbogus = signed_params.split("X-Bogus=")[-1] if "X-Bogus=" in signed_params else ""
 
-        xgnarly = get_X_Gnarly(
-            query_string=query_string, request_body="", user_agent=user_agent
-        )
+        xgnarly = get_X_Gnarly(query_string=query_string, request_body="", user_agent=user_agent)
 
         if xgnarly:
             xgnarly = xgnarly.strip()
@@ -252,12 +243,12 @@ class TikTokBaseService:
     def _make_request(
         self,
         endpoint: str,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         use_fresh_token: bool = True,
         delay_before_request: float = 1.5,
         user_agent: str = None,
-        proxies: Dict[str, str] = None,
-    ) -> Dict[str, Any]:
+        proxies: dict[str, str] = None,
+    ) -> dict[str, Any]:
         if user_agent is None:
             user_agent = self.MOBILE_UA
 
@@ -294,9 +285,7 @@ class TikTokBaseService:
         }
 
         try:
-            response = self.session.get(
-                signed_url, headers=headers, proxies=proxies, timeout=15
-            )
+            response = self.session.get(signed_url, headers=headers, proxies=proxies, timeout=15)
 
             if response.status_code != 200 or len(response.content) == 0:
                 return {}

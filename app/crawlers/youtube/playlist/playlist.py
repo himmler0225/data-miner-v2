@@ -1,18 +1,11 @@
-from typing import Dict, List
-
 from app.config.constants import ENDPOINT_BROWSE
-from app.crawlers.youtube.client import (create_httpx_client, get_context,
-                                         get_youtube_api_key, get_youtube_api_url)
+from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 
 from ....exceptions import YouTubeStructureChangedError
 
 
 def extract_playlists_tab_info(data):
-    tabs = (
-        data.get("contents", {})
-        .get("twoColumnBrowseResultsRenderer", {})
-        .get("tabs", [])
-    )
+    tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
     browse_id = None
     params = None
     for tab in tabs:
@@ -38,15 +31,13 @@ def extract_title(title_obj):
     return ""
 
 
-async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
+async def get_playlist_videos(channel_id: str, proxy: str = None) -> list[dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
     playlists = []
 
     async with create_httpx_client(proxy=proxy) as client:
-        resp = await client.post(
-            browse_url, json={"context": get_context(), "browseId": channel_id}
-        )
+        resp = await client.post(browse_url, json={"context": get_context(), "browseId": channel_id})
         resp.raise_for_status()
         data = resp.json()
 
@@ -64,11 +55,7 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
         resp.raise_for_status()
         playlist_data = resp.json()
 
-        contents = (
-            playlist_data.get("contents", {})
-            .get("twoColumnBrowseResultsRenderer", {})
-            .get("tabs", [])
-        )
+        contents = playlist_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
         target_tab = None
         for tab in contents:
             tab_renderer = tab.get("tabRenderer", {})
@@ -95,17 +82,12 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
             )
             resp.raise_for_status()
             playlist_data = resp.json()
-            contents = (
-                playlist_data.get("contents", {})
-                .get("twoColumnBrowseResultsRenderer", {})
-                .get("tabs", [])
-            )
+            contents = playlist_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
             target_tab = next(
                 (
                     tab.get("tabRenderer", {})
                     for tab in contents
-                    if tab.get("tabRenderer", {}).get("title", "").lower()
-                    == "playlists"
+                    if tab.get("tabRenderer", {}).get("title", "").lower() == "playlists"
                 ),
                 None,
             )
@@ -137,15 +119,9 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
                         .get("thumbnailViewModel", {})
                         .get("overlays", [])
                     ):
-                        badge = overlay.get("thumbnailOverlayBadgeViewModel", {}).get(
-                            "thumbnailBadges", []
-                        )
+                        badge = overlay.get("thumbnailOverlayBadgeViewModel", {}).get("thumbnailBadges", [])
                         if badge:
-                            video_count = (
-                                badge[0]
-                                .get("thumbnailBadgeViewModel", {})
-                                .get("text", "")
-                            )
+                            video_count = badge[0].get("thumbnailBadgeViewModel", {}).get("text", "")
                             if video_count:
                                 break
                     title = (
@@ -174,7 +150,7 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> List[Dict]:
     return playlists
 
 
-async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> List[Dict]:
+async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> list[dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
     payload = {"context": get_context(), "browseId": f"VL{playlist_id}"}
@@ -192,11 +168,7 @@ async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> List[
                     context={"playlist_id": playlist_id, "top_keys": list(data.keys())},
                 )
 
-            tabs = (
-                data.get("contents", {})
-                .get("twoColumnBrowseResultsRenderer", {})
-                .get("tabs", [])
-            )
+            tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
             contents = (
                 (tabs[0] if tabs else {})
                 .get("tabRenderer", {})
@@ -206,11 +178,7 @@ async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> List[
                 )
                 .get("contents", [])
             )
-            playlist_items_list = (
-                (contents[0] if contents else {})
-                .get("itemSectionRenderer", {})
-                .get("contents", [])
-            )
+            playlist_items_list = (contents[0] if contents else {}).get("itemSectionRenderer", {}).get("contents", [])
             contents = (
                 (playlist_items_list[0] if playlist_items_list else {})
                 .get("playlistVideoListRenderer", {})
@@ -227,15 +195,9 @@ async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> List[
                         {
                             "video_id": renderer.get("videoId"),
                             "title": extract_title(renderer.get("title", {})),
-                            "published_time": renderer.get("publishedTimeText", {}).get(
-                                "simpleText", ""
-                            ),
-                            "duration": renderer.get("lengthText", {}).get(
-                                "simpleText", ""
-                            ),
-                            "thumbnail": renderer.get("thumbnail", {})
-                            .get("thumbnails", [{}])[-1]
-                            .get("url", ""),
+                            "published_time": renderer.get("publishedTimeText", {}).get("simpleText", ""),
+                            "duration": renderer.get("lengthText", {}).get("simpleText", ""),
+                            "thumbnail": renderer.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", ""),
                         }
                     )
                 elif "continuationItemRenderer" in item:

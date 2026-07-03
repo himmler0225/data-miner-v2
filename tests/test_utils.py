@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 from app.api_key_generator import generate_api_key

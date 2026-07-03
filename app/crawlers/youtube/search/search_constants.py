@@ -1,5 +1,4 @@
-from app.config.constants import (SORT_RATING, SORT_RELEVANCE,
-                                  SORT_UPLOAD_DATE, SORT_VIEW_COUNT)
+from app.config.constants import SORT_RATING, SORT_RELEVANCE, SORT_UPLOAD_DATE, SORT_VIEW_COUNT
 
 SORT_OPTIONS = {
     "relevance": SORT_RELEVANCE,

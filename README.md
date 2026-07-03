@@ -4,6 +4,8 @@ A production-style **FastAPI** service that scrapes structured data from **YouTu
 
 Built to run behind rotating residential proxies, with centralised remote configuration, global rate limiting, and resilient parsing of constantly-changing upstream responses.
 
+**Roadmap — MCP Phase 2 (agent tool auto-discovery):** [../docs/MCP-PHASE2-GUIDE.md](../docs/MCP-PHASE2-GUIDE.md)
+
 ---
 
 ## Highlights

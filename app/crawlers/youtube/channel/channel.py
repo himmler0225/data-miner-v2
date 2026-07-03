@@ -1,17 +1,14 @@
 import base64
-from typing import Dict, List
 
-from app.config.constants import (CHANNEL_TAB_VIDEOS, ENDPOINT_BROWSE,
-                                  YOUTUBE_BASE_URL)
+from app.config.constants import CHANNEL_TAB_VIDEOS, ENDPOINT_BROWSE, YOUTUBE_BASE_URL
 from app.config.headers import get_youtube_headers
-from app.crawlers.youtube.client import (create_httpx_client, get_context,
-                                         get_youtube_api_key, get_youtube_api_url)
+from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 
 from ....exceptions import YouTubeStructureChangedError
 from ..shared.parsers import join_runs
 
 
-def extract_video_items(items: List[Dict]) -> List[Dict]:
+def extract_video_items(items: list[dict]) -> list[dict]:
     videos = []
     for item in items:
         content = item.get("richItemRenderer", {}).get("content", {}) or item
@@ -32,9 +29,7 @@ def extract_video_items(items: List[Dict]) -> List[Dict]:
     return videos
 
 
-async def get_channel_videos(
-    channel_id: str, proxy: str = None, max_results: int = 100
-) -> List[Dict]:
+async def get_channel_videos(channel_id: str, proxy: str = None, max_results: int = 100) -> list[dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
     headers = get_youtube_headers()
@@ -53,11 +48,7 @@ async def get_channel_videos(
         resp.raise_for_status()
         data = resp.json()
 
-        tabs = (
-            data.get("contents", {})
-            .get("twoColumnBrowseResultsRenderer", {})
-            .get("tabs", [])
-        )
+        tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
         if not tabs:
             raise YouTubeStructureChangedError(
                 "twoColumnBrowseResultsRenderer.tabs not found for channel",
@@ -65,19 +56,11 @@ async def get_channel_videos(
             )
 
         videos_tab = next(
-            (
-                tab
-                for tab in tabs
-                if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"
-            ),
+            (tab for tab in tabs if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"),
             None,
         )
         if videos_tab:
-            endpoint = (
-                videos_tab.get("tabRenderer", {})
-                .get("endpoint", {})
-                .get("browseEndpoint", {})
-            )
+            endpoint = videos_tab.get("tabRenderer", {}).get("endpoint", {}).get("browseEndpoint", {})
             browse_id = endpoint.get("browseId")
             params = endpoint.get("params")
             payload = {
@@ -88,27 +71,15 @@ async def get_channel_videos(
             resp = await client.post(browse_url, json=payload)
             resp.raise_for_status()
             data = resp.json()
-            tabs = (
-                data.get("contents", {})
-                .get("twoColumnBrowseResultsRenderer", {})
-                .get("tabs", [])
-            )
+            tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
             videos_tab = next(
-                (
-                    tab
-                    for tab in tabs
-                    if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"
-                ),
+                (tab for tab in tabs if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"),
                 None,
             )
 
         if not videos_tab:
             videos_tab = next(
-                (
-                    tab
-                    for tab in tabs
-                    if tab.get("tabRenderer", {}).get("title", "").lower() == "home"
-                ),
+                (tab for tab in tabs if tab.get("tabRenderer", {}).get("title", "").lower() == "home"),
                 None,
             )
             if not videos_tab:
@@ -117,12 +88,7 @@ async def get_channel_videos(
                     context={"channel_id": channel_id},
                 )
 
-        section = (
-            videos_tab.get("tabRenderer", {})
-            .get("content", {})
-            .get("richGridRenderer", {})
-            .get("contents", [])
-        )
+        section = videos_tab.get("tabRenderer", {}).get("content", {}).get("richGridRenderer", {}).get("contents", [])
         collected += extract_video_items(section)
         continuation = next(
             (
@@ -141,18 +107,10 @@ async def get_channel_videos(
             resp = await client.post(browse_url, json=payload)
             resp.raise_for_status()
             data = resp.json()
-            commands = (
-                data.get("onResponseReceivedCommands")
-                or data.get("onResponseReceivedActions")
-                or []
-            )
+            commands = data.get("onResponseReceivedCommands") or data.get("onResponseReceivedActions") or []
             if not commands:
                 break
-            continuation_items = (
-                commands[0]
-                .get("appendContinuationItemsAction", {})
-                .get("continuationItems", [])
-            )
+            continuation_items = commands[0].get("appendContinuationItemsAction", {}).get("continuationItems", [])
             collected += extract_video_items(continuation_items)
             continuation = next(
                 (

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from hashlib import md5
 from time import time
 
@@ -127,9 +125,7 @@ class Signer:
     def _x_bogus(params: str, user_agent: str, timestamp: int, data: str = "") -> str:
         md5_data = Signer.md5_2x(data)
         md5_params = Signer.md5_2x(params)
-        md5_ua = md5(
-            Signer.b64_encode(Signer.rc4_encrypt(user_agent, [0, 1, 14])).encode()
-        ).hexdigest()
+        md5_ua = md5(Signer.b64_encode(Signer.rc4_encrypt(user_agent, [0, 1, 14])).encode()).hexdigest()
 
         salt_list = [
             timestamp,

@@ -33,7 +33,7 @@ def parse_view_count(text) -> int:
 
         return int(first.replace(".", ""))
 
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return 0
 
 
@@ -52,16 +52,11 @@ def retry_on_failure(max_retries=3, delay=1):
                         f"YouTube structure changed in {func.__name__}: {e}",
                         extra={"extra_data": {"context": e.context}},
                     )
-                    raise HTTPException(
-                        status_code=502, detail=f"YouTube structure changed: {e}"
-                    )
+                    raise HTTPException(status_code=502, detail=f"YouTube structure changed: {e}")
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    if (
-                        isinstance(e, httpx.HTTPStatusError)
-                        and 400 <= e.response.status_code < 500
-                    ):
+                    if isinstance(e, httpx.HTTPStatusError) and 400 <= e.response.status_code < 500:
                         raise
                     last_exception = e
                     if isinstance(

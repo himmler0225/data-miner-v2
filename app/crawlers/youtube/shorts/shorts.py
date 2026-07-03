@@ -1,11 +1,10 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import unquote
 
 from app.config.constants import ENDPOINT_SEARCH, YOUTUBE_BASE_URL
 from app.config.headers import get_youtube_headers
 from app.config.logger import Logger
-from app.crawlers.youtube.client import (create_httpx_client, get_context,
-                                         get_youtube_api_key, get_youtube_api_url)
+from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 from app.crawlers.youtube.utils import parse_view_count
 
 from .shorts_constants import _REEL_ENDPOINT, _SEEDLESS_PARAMS
@@ -26,7 +25,7 @@ def _next_endpoint(data: dict) -> dict:
     return data.get("replacementEndpoint", {}).get("reelWatchEndpoint", {})
 
 
-def _next_pos_params(data: dict) -> Optional[str]:
+def _next_pos_params(data: dict) -> str | None:
     raw = _next_endpoint(data).get("params")
     return unquote(raw) if raw else None
 
@@ -35,7 +34,7 @@ def _shorts_url(video_id: str) -> str:
     return f"{YOUTUBE_BASE_URL}/shorts/{video_id}"
 
 
-def _parse_short(data: dict) -> Optional[dict]:
+def _parse_short(data: dict) -> dict | None:
     pr = data.get("playerResponse", {})
     details = pr.get("videoDetails", {})
     video_id = details.get("videoId")
@@ -64,7 +63,7 @@ def _parse_short(data: dict) -> Optional[dict]:
     }
 
 
-def _parse_short_from_replacement(data: dict) -> Optional[dict]:
+def _parse_short_from_replacement(data: dict) -> dict | None:
     ep = _next_endpoint(data)
     video_id = ep.get("videoId")
     if not video_id:
@@ -91,8 +90,8 @@ def _parse_short_from_replacement(data: dict) -> Optional[dict]:
     }
 
 
-def _find_reel_item_renderers(obj: Any) -> List[tuple]:
-    items: List[tuple] = []
+def _find_reel_item_renderers(obj: Any) -> list[tuple]:
+    items: list[tuple] = []
     if isinstance(obj, dict):
         if "reelItemRenderer" in obj:
             items.append(("reel", obj["reelItemRenderer"]))
@@ -107,7 +106,7 @@ def _find_reel_item_renderers(obj: Any) -> List[tuple]:
     return items
 
 
-def _parse_reel_item_renderer(item_type: str, item: dict) -> Optional[dict]:
+def _parse_reel_item_renderer(item_type: str, item: dict) -> dict | None:
     if item_type == "reel":
         video_id = item.get("videoId")
         if not video_id:
@@ -117,18 +116,11 @@ def _parse_reel_item_renderer(item_type: str, item: dict) -> Optional[dict]:
         byline = item.get("shortBylineText", {})
         channel = _extract_text(byline)
         channel_id = (
-            byline.get("runs", [{}])[0]
-            .get("navigationEndpoint", {})
-            .get("browseEndpoint", {})
-            .get("browseId")
+            byline.get("runs", [{}])[0].get("navigationEndpoint", {}).get("browseEndpoint", {}).get("browseId")
         ) or None
         thumbnails = item.get("thumbnail", {}).get("thumbnails", [])
     elif item_type == "lockup":
-        nav = (
-            item.get("onTap", {})
-            .get("innertubeCommand", {})
-            .get("reelWatchEndpoint", {})
-        )
+        nav = item.get("onTap", {}).get("innertubeCommand", {}).get("reelWatchEndpoint", {})
         video_id = nav.get("videoId")
         if not video_id:
             return None
@@ -163,9 +155,7 @@ def _parse_reel_item_renderer(item_type: str, item: dict) -> Optional[dict]:
     }
 
 
-async def _fetch_shorts_from_search(
-    client, api_key, query, seen_ids, max_per_query=15
-) -> List[Dict]:
+async def _fetch_shorts_from_search(client, api_key, query, seen_ids, max_per_query=15) -> list[dict]:
     url = get_youtube_api_url(ENDPOINT_SEARCH, api_key) + "&prettyPrint=false"
     try:
         resp = await client.post(url, json={"context": get_context(), "query": query})
@@ -179,7 +169,7 @@ async def _fetch_shorts_from_search(
 
     items = _find_reel_item_renderers(data)
     logger.info("[shorts:search] '%s' -> %s items", query, len(items))
-    shorts: List[Dict] = []
+    shorts: list[dict] = []
     for item_type, item in items:
         parsed = _parse_reel_item_renderer(item_type, item)
         if parsed and parsed["video_id"] not in seen_ids:
@@ -200,18 +190,16 @@ async def _bootstrap_session(client) -> None:
                     loc = f"{YOUTUBE_BASE_URL}{loc}"
                 await client.get(loc)
                 if "m.youtube.com" in loc:
-                    logger.warning(
-                        "[shorts] redirected to m.youtube.com ; WEB context may cycle"
-                    )
+                    logger.warning("[shorts] redirected to m.youtube.com ; WEB context may cycle")
         except Exception as e:
             logger.warning("[shorts] init %s failed: %s", url, e)
 
 
-async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict]:
-    batch: List[Dict] = []
-    pos_params: Optional[str] = None
-    last_pos_params: Optional[str] = None
-    tracking_params: Optional[str] = None
+async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> list[dict]:
+    batch: list[dict] = []
+    pos_params: str | None = None
+    last_pos_params: str | None = None
+    tracking_params: str | None = None
     stale_count = 0
     dup_count = 0
 
@@ -257,9 +245,7 @@ async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict
         tracking_params = data.get("trackingParams")
 
         if status != "REEL_ITEM_WATCH_STATUS_SUCCEEDED":
-            logger.warning(
-                "[shorts:reel] step %s status=%s -> ending batch", i, status
-            )
+            logger.warning("[shorts:reel] step %s status=%s -> ending batch", i, status)
             break
 
         parsed = _parse_short(data) or _parse_short_from_replacement(data)
@@ -277,16 +263,12 @@ async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict
                 dup_count = 0
                 seen_ids.add(vid)
                 batch.append(parsed)
-                logger.info(
-                    "[shorts:reel] +1 -> %s (%s)", vid, parsed.get("title", "")
-                )
+                logger.info("[shorts:reel] +1 -> %s (%s)", vid, parsed.get("title", ""))
 
         if new_pos and new_pos == last_pos_params:
             stale_count += 1
             if stale_count >= 3:
-                logger.debug(
-                    "⬜ [shorts:reel] step %s pos_params unchanged -> ending batch", i
-                )
+                logger.debug("⬜ [shorts:reel] step %s pos_params unchanged -> ending batch", i)
                 break
         else:
             stale_count = 0
@@ -299,33 +281,27 @@ async def _fetch_shorts_batch(client, url, seen_ids, batch_limit=8) -> List[Dict
     return batch
 
 
-async def get_shorts_feed(proxy: str = None, max_results: int = 20) -> List[Dict]:
+async def get_shorts_feed(proxy: str = None, max_results: int = 20) -> list[dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     headers = get_youtube_headers()
 
     async with create_httpx_client(proxy=proxy, headers=headers) as client:
-        shorts: List[Dict] = []
+        shorts: list[dict] = []
         seen_ids: set = set()
 
         # Search-based shorts need no session cookies ; try them first.
         for q in ("#shorts", "shorts funny", "shorts viral", "shorts trending 2024"):
             if len(shorts) >= max_results:
                 break
-            results = await _fetch_shorts_from_search(
-                client, api_key, q, seen_ids, max_per_query=max_results
-            )
+            results = await _fetch_shorts_from_search(client, api_key, q, seen_ids, max_per_query=max_results)
             shorts.extend(results)
-            logger.info(
-                "[shorts] search '%s' +%s -> total %s", q, len(results), len(shorts)
-            )
+            logger.info("[shorts] search '%s' +%s -> total %s", q, len(results), len(shorts))
 
         if len(shorts) < max_results:
             logger.info("[shorts] search insufficient, switching to reel_item_watch")
             # Reel endpoint needs a warmed session ; bootstrap only now.
             await _bootstrap_session(client)
-            reel_url = (
-                get_youtube_api_url(_REEL_ENDPOINT, api_key) + "&prettyPrint=false"
-            )
+            reel_url = get_youtube_api_url(_REEL_ENDPOINT, api_key) + "&prettyPrint=false"
             consecutive_empty = 0
             for restart in range(8):
                 if len(shorts) >= max_results:

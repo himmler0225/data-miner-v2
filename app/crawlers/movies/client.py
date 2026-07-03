@@ -1,35 +1,21 @@
-from __future__ import annotations
-
 import asyncio
-from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional
+from typing import Any
 from urllib.parse import quote
 
 import httpx
 
-from app.config.constants import (
-    HTTP_MAX_ATTEMPTS,
-    HTTP_MAX_CONNECTIONS,
-    HTTP_MAX_KEEPALIVE,
-    HTTP_RETRY_STATUSES,
-    MOVIE_API_TIMEOUT,
-)
+from app.config.http import HTTP_MAX_ATTEMPTS, HTTP_MAX_CONNECTIONS, HTTP_MAX_KEEPALIVE, HTTP_RETRY_STATUSES
 from app.config.logger import Logger
+from app.crawlers.movies.config import (
+    MOVIE_API_TIMEOUT,
+    MOVIE_LIST_TYPES,
+    PROVIDERS,
+    MovieProvider,
+    ProviderSpec,
+)
 from app.exceptions import CrawlerBaseError, CrawlNetworkError
 
 logger = Logger.get(__name__)
-
-MovieProvider = Literal["kkphim", "ophim"]
-
-MOVIE_LIST_TYPES = frozenset({
-    "phim-bo",
-    "phim-le",
-    "tv-shows",
-    "hoat-hinh",
-    "phim-vietsub",
-    "phim-thuyet-minh",
-    "phim-long-tieng",
-})
 
 
 class MovieValidationError(CrawlerBaseError):
@@ -40,36 +26,7 @@ class MovieUpstreamError(CrawlNetworkError):
     pass
 
 
-@dataclass(frozen=True)
-class ProviderSpec:
-    name: MovieProvider
-    base_url: str
-    image_cdn: str
-    new_movies_path: str
-    type_list_full_filters: bool
-    has_webp_proxy: bool
-
-
-PROVIDERS: Dict[MovieProvider, ProviderSpec] = {
-    "kkphim": ProviderSpec(
-        name="kkphim",
-        base_url="https://phimapi.com",
-        image_cdn="https://phimimg.com/",
-        new_movies_path="/danh-sach/phim-moi-cap-nhat-v3",
-        type_list_full_filters=True,
-        has_webp_proxy=True,
-    ),
-    "ophim": ProviderSpec(
-        name="ophim",
-        base_url="https://ophim1.com",
-        image_cdn="https://img.ophim.live/uploads/movies/",
-        new_movies_path="/danh-sach/phim-moi-cap-nhat",
-        type_list_full_filters=False,
-        has_webp_proxy=False,
-    ),
-}
-
-_clients: Dict[MovieProvider, httpx.AsyncClient] = {}
+_clients: dict[MovieProvider, httpx.AsyncClient] = {}
 
 
 def normalize_provider(name: str) -> MovieProvider:
@@ -108,14 +65,14 @@ def _list_query_params(
     *,
     page: int = 1,
     limit: int = 24,
-    category: Optional[str] = None,
-    country: Optional[str] = None,
-    year: Optional[int] = None,
-    sort_lang: Optional[str] = None,
-    sort_field: Optional[str] = None,
-    sort_type: Optional[str] = None,
-) -> Dict[str, Any]:
-    params: Dict[str, Any] = {"page": max(page, 1), "limit": min(max(limit, 1), 64)}
+    category: str | None = None,
+    country: str | None = None,
+    year: int | None = None,
+    sort_lang: str | None = None,
+    sort_field: str | None = None,
+    sort_type: str | None = None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {"page": max(page, 1), "limit": min(max(limit, 1), 64)}
     for key, value in {
         "category": category,
         "country": country,
@@ -129,9 +86,9 @@ def _list_query_params(
     return params
 
 
-async def _request(provider: str, method: str, path: str, *, params: Optional[Dict[str, Any]] = None) -> Any:
+async def _request(provider: str, method: str, path: str, *, params: dict[str, Any] | None = None) -> Any:
     spec = get_provider_spec(provider)
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(1, HTTP_MAX_ATTEMPTS + 1):
         try:
             response = await _get_client(spec).request(method, path, params=params or {})
@@ -155,7 +112,7 @@ async def _request(provider: str, method: str, path: str, *, params: Optional[Di
     raise MovieUpstreamError(f"{spec.name} request failed: {last_exc}") from last_exc
 
 
-def _with_meta(data: Any, *, provider: str) -> Dict[str, Any]:
+def _with_meta(data: Any, *, provider: str) -> dict[str, Any]:
     spec = get_provider_spec(provider)
     return {
         "provider": spec.name,
@@ -165,7 +122,7 @@ def _with_meta(data: Any, *, provider: str) -> Dict[str, Any]:
     }
 
 
-async def get_new(provider: str, *, page: int = 1) -> Dict[str, Any]:
+async def get_new(provider: str, *, page: int = 1) -> dict[str, Any]:
     spec = get_provider_spec(provider)
     data = await _request(provider, "GET", spec.new_movies_path, params={"page": max(page, 1)})
     return _with_meta(data, provider=provider)
@@ -177,13 +134,13 @@ async def list_by_type(
     *,
     page: int = 1,
     limit: int = 24,
-    category: Optional[str] = None,
-    country: Optional[str] = None,
-    year: Optional[int] = None,
-    sort_lang: Optional[str] = None,
-    sort_field: Optional[str] = None,
-    sort_type: Optional[str] = None,
-) -> Dict[str, Any]:
+    category: str | None = None,
+    country: str | None = None,
+    year: int | None = None,
+    sort_lang: str | None = None,
+    sort_field: str | None = None,
+    sort_type: str | None = None,
+) -> dict[str, Any]:
     if movie_type not in MOVIE_LIST_TYPES:
         raise MovieValidationError(f"Invalid movie type: {movie_type!r}")
     spec = get_provider_spec(provider)
@@ -203,7 +160,7 @@ async def list_by_type(
     return _with_meta(data, provider=provider)
 
 
-async def get_detail(provider: str, slug: str) -> Dict[str, Any]:
+async def get_detail(provider: str, slug: str) -> dict[str, Any]:
     slug = (slug or "").strip().strip("/")
     if not slug:
         raise MovieValidationError("slug is required")
@@ -217,7 +174,7 @@ async def search(
     keyword: str,
     page: int = 1,
     limit: int = 24,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     keyword = (keyword or "").strip()
     if not keyword:
         raise MovieValidationError("keyword is required")
@@ -236,13 +193,13 @@ async def list_by_genre(
     *,
     page: int = 1,
     limit: int = 24,
-    category: Optional[str] = None,
-    country: Optional[str] = None,
-    year: Optional[int] = None,
-    sort_lang: Optional[str] = None,
-    sort_field: Optional[str] = None,
-    sort_type: Optional[str] = None,
-) -> Dict[str, Any]:
+    category: str | None = None,
+    country: str | None = None,
+    year: int | None = None,
+    sort_lang: str | None = None,
+    sort_field: str | None = None,
+    sort_type: str | None = None,
+) -> dict[str, Any]:
     slug = (slug or "").strip().strip("/")
     if not slug:
         raise MovieValidationError("genre slug is required")
@@ -266,13 +223,13 @@ async def list_by_country(
     *,
     page: int = 1,
     limit: int = 24,
-    category: Optional[str] = None,
-    country: Optional[str] = None,
-    year: Optional[int] = None,
-    sort_lang: Optional[str] = None,
-    sort_field: Optional[str] = None,
-    sort_type: Optional[str] = None,
-) -> Dict[str, Any]:
+    category: str | None = None,
+    country: str | None = None,
+    year: int | None = None,
+    sort_lang: str | None = None,
+    sort_field: str | None = None,
+    sort_type: str | None = None,
+) -> dict[str, Any]:
     slug = (slug or "").strip().strip("/")
     if not slug:
         raise MovieValidationError("country slug is required")
@@ -296,12 +253,12 @@ async def list_by_year(
     *,
     page: int = 1,
     limit: int = 24,
-    category: Optional[str] = None,
-    country: Optional[str] = None,
-    sort_lang: Optional[str] = None,
-    sort_field: Optional[str] = None,
-    sort_type: Optional[str] = None,
-) -> Dict[str, Any]:
+    category: str | None = None,
+    country: str | None = None,
+    sort_lang: str | None = None,
+    sort_field: str | None = None,
+    sort_type: str | None = None,
+) -> dict[str, Any]:
     if year < 1900 or year > 2100:
         raise MovieValidationError("year must be a 4-digit year")
     params = _list_query_params(
@@ -318,17 +275,17 @@ async def list_by_year(
     return _with_meta(data, provider=provider)
 
 
-async def get_genres(provider: str) -> Dict[str, Any]:
+async def get_genres(provider: str) -> dict[str, Any]:
     data = await _request(provider, "GET", "/the-loai")
     return _with_meta(data, provider=provider)
 
 
-async def get_countries(provider: str) -> Dict[str, Any]:
+async def get_countries(provider: str) -> dict[str, Any]:
     data = await _request(provider, "GET", "/quoc-gia")
     return _with_meta(data, provider=provider)
 
 
-async def proxy_webp(provider: str, *, image_url: str) -> Dict[str, Any]:
+async def proxy_webp(provider: str, *, image_url: str) -> dict[str, Any]:
     spec = get_provider_spec(provider)
     if not spec.has_webp_proxy:
         raise MovieValidationError(f"{spec.name} does not support WebP image proxy")

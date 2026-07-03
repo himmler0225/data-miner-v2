@@ -16,7 +16,7 @@
 
 ## 🔧 Prerequisites
 
-- Python 3.8+
+- Python 3.14+
 - pip or poetry
 - PostgreSQL (for future database integration)
 - Redis (optional, for caching)
@@ -34,8 +34,8 @@ cd youtube-crawler
 ### 2. Create virtual environment
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 ### 3. Install dependencies
@@ -57,7 +57,7 @@ cp .env.example .env
 ### 2. Generate API keys
 
 ```bash
-python -m app.utils.api_key_generator
+python3 -m app.utils.api_key_generator
 ```
 
 Output example:
@@ -351,7 +351,7 @@ export class CrawlerScheduler {
 Create `Dockerfile`:
 
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 

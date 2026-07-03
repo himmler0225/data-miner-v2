@@ -2,7 +2,7 @@
 TikTok Trending Service
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from .base import TikTokBaseService
 
@@ -10,9 +10,7 @@ from .base import TikTokBaseService
 class TrendingService(TikTokBaseService):
     """TikTok Trending Service"""
 
-    def get_trending(
-        self, count: int = 20, proxies: Dict[str, str] = None
-    ) -> Dict[str, Any]:
+    def get_trending(self, count: int = 20, proxies: dict[str, str] = None) -> dict[str, Any]:
         """
         Get trending videos (fake msToken works)
 

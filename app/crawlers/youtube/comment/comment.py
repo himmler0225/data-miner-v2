@@ -1,11 +1,10 @@
 import asyncio
 import base64
-from typing import Dict, List, Literal
+from typing import Literal
 
 from app.config.constants import ENDPOINT_NEXT
 from app.config.logger import Logger
-from app.crawlers.youtube.client import (create_httpx_client, get_context,
-                                         get_youtube_api_key, get_youtube_api_url)
+from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 from app.crawlers.youtube.utils import parse_view_count
 
 logger = Logger.get(__name__)
@@ -34,7 +33,7 @@ async def fetch_replies(
     context: dict,
     proxy: str = None,
     max_depth: int = 2,
-) -> List[Dict]:
+) -> list[dict]:
     replies = []
     api_key = await get_youtube_api_key(proxy=proxy)
     url_comment = get_youtube_api_url(ENDPOINT_NEXT, api_key)
@@ -50,17 +49,13 @@ async def fetch_replies(
         depth += 1
 
         for action in data.get("onResponseReceivedEndpoints", []):
-            for item in action.get("appendContinuationItemsAction", {}).get(
-                "continuationItems", []
-            ):
+            for item in action.get("appendContinuationItemsAction", {}).get("continuationItems", []):
                 if "commentViewModel" in item:
                     comment_vm = item.get("commentViewModel", {})
                     comment_id = comment_vm.get("commentId")
                     entity = entity_map.get(comment_id, {})
                     if not entity:
-                        logger.debug(
-                            "Missing entity for reply commentId=%s", comment_id
-                        )
+                        logger.debug("Missing entity for reply commentId=%s", comment_id)
                         continue
                     replies.append(
                         {
@@ -143,17 +138,8 @@ def extract_comment_continuation_token(data: dict) -> str:
 
     # Path 4: frameworkUpdates mutations
     try:
-        for m in (
-            data.get("frameworkUpdates", {})
-            .get("entityBatchUpdate", {})
-            .get("mutations", [])
-        ):
-            token = (
-                m.get("payload", {})
-                .get("continuationEndpoint", {})
-                .get("continuationCommand", {})
-                .get("token")
-            )
+        for m in data.get("frameworkUpdates", {}).get("entityBatchUpdate", {}).get("mutations", []):
+            token = m.get("payload", {}).get("continuationEndpoint", {}).get("continuationCommand", {}).get("token")
             if token:
                 return token
     except Exception as e:
@@ -164,11 +150,7 @@ def extract_comment_continuation_token(data: dict) -> str:
 
 def parse_comment_entities(data: dict) -> dict:
     result = {}
-    for m in (
-        data.get("frameworkUpdates", {})
-        .get("entityBatchUpdate", {})
-        .get("mutations", [])
-    ):
+    for m in data.get("frameworkUpdates", {}).get("entityBatchUpdate", {}).get("mutations", []):
         payload = m.get("payload", {})
         comment = payload.get("commentEntityPayload", {})
         props = comment.get("properties", {})
@@ -182,12 +164,8 @@ def parse_comment_entities(data: dict) -> dict:
                 "author": comment.get("author", {}).get("displayName", ""),
                 "avatar": comment.get("author", {}).get("avatarThumbnailUrl", ""),
                 "published_time": props.get("publishedTime", "Unknown"),
-                "likes": parse_view_count(
-                    comment.get("toolbar", {}).get("likeCountLiked")
-                ),
-                "replies": parse_view_count(
-                    comment.get("toolbar", {}).get("replyCount")
-                ),
+                "likes": parse_view_count(comment.get("toolbar", {}).get("likeCountLiked")),
+                "replies": parse_view_count(comment.get("toolbar", {}).get("replyCount")),
             }
     return result
 
@@ -197,7 +175,7 @@ async def get_video_comments(
     proxy: str = None,
     max_comments: int = 100,
     sort: Literal["top", "newest"] = "top",
-) -> List[Dict]:
+) -> list[dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     url_next = get_youtube_api_url(ENDPOINT_NEXT, api_key)
     context = get_context()
@@ -210,9 +188,7 @@ async def get_video_comments(
             logger.debug("Using pre-built newest-sort token for %s", video_id)
         else:
             # sort="top" requires a session token from YouTube ; must fetch it first.
-            resp = await client.post(
-                url_next, json={"context": context, "videoId": video_id}
-            )
+            resp = await client.post(url_next, json={"context": context, "videoId": video_id})
             resp.raise_for_status()
             data = resp.json()
             continuation_token = extract_comment_continuation_token(data)
@@ -224,26 +200,20 @@ async def get_video_comments(
                 return []
 
         while continuation_token and len(comments) < max_comments:
-            resp = await client.post(
-                url_next, json={"context": context, "continuation": continuation_token}
-            )
+            resp = await client.post(url_next, json={"context": context, "continuation": continuation_token})
             resp.raise_for_status()
             data = resp.json()
             entity_map = parse_comment_entities(data)
             continuation_token = None
 
             for action in data.get("onResponseReceivedEndpoints", []):
-                items = action.get("reloadContinuationItemsCommand", {}).get(
-                    "continuationItems", []
-                ) or action.get("appendContinuationItemsAction", {}).get(
-                    "continuationItems", []
-                )
+                items = action.get("reloadContinuationItemsCommand", {}).get("continuationItems", []) or action.get(
+                    "appendContinuationItemsAction", {}
+                ).get("continuationItems", [])
                 for item in items:
                     if "commentThreadRenderer" in item:
                         thread = item["commentThreadRenderer"]
-                        comment_vm = thread.get("commentViewModel", {}).get(
-                            "commentViewModel", {}
-                        )
+                        comment_vm = thread.get("commentViewModel", {}).get("commentViewModel", {})
                         comment_id = comment_vm.get("commentId")
                         entity = entity_map.get(comment_id, {})
                         if not entity:
@@ -264,11 +234,7 @@ async def get_video_comments(
                         }
 
                         reply_token = None
-                        for c in (
-                            thread.get("replies", {})
-                            .get("commentRepliesRenderer", {})
-                            .get("contents", [])
-                        ):
+                        for c in thread.get("replies", {}).get("commentRepliesRenderer", {}).get("contents", []):
                             continuation = (
                                 c.get("continuationItemRenderer", {})
                                 .get("continuationEndpoint", {})
@@ -297,21 +263,14 @@ async def get_video_comments(
                     break
 
         # Batch-fetch all replies in parallel instead of sequential awaits
-        pending = [
-            (i, c.pop("_reply_token"))
-            for i, c in enumerate(comments)
-            if "_reply_token" in c
-        ]
+        pending = [(i, c.pop("_reply_token")) for i, c in enumerate(comments) if "_reply_token" in c]
         if pending:
             logger.debug(
                 "[comments] fetching replies for %d comments in parallel",
                 len(pending),
             )
             results = await asyncio.gather(
-                *[
-                    fetch_replies(client, tok, context, proxy=proxy)
-                    for _, tok in pending
-                ],
+                *[fetch_replies(client, tok, context, proxy=proxy) for _, tok in pending],
                 return_exceptions=True,
             )
             for (idx, _), result in zip(pending, results):
@@ -322,12 +281,12 @@ async def get_video_comments(
 
 
 async def get_video_comments_batch(
-    video_ids: List[str],
+    video_ids: list[str],
     proxy: str = None,
     max_per_video: int = 20,
     sort: Literal["top", "newest"] = "top",
     concurrency: int = 3,
-) -> Dict:
+) -> dict:
     """
     Fetch comments for several videos in parallel (bounded by `concurrency`).
     Videos with disabled/zero comments are skipped ; returns whatever has comments.
@@ -339,9 +298,7 @@ async def get_video_comments_batch(
     async def _one(vid: str):
         async with sem:
             try:
-                comments = await get_video_comments(
-                    vid, proxy=proxy, max_comments=max_per_video, sort=sort
-                )
+                comments = await get_video_comments(vid, proxy=proxy, max_comments=max_per_video, sort=sort)
                 return vid, comments, None
             except Exception as e:
                 return vid, [], str(e)
@@ -356,9 +313,7 @@ async def get_video_comments_batch(
         elif not comments:
             skipped.append({"video_id": vid, "reason": "disabled_or_empty"})
         else:
-            per_video.append(
-                {"video_id": vid, "total": len(comments), "comments": comments}
-            )
+            per_video.append({"video_id": vid, "total": len(comments), "comments": comments})
 
     total = sum(v["total"] for v in per_video)
     logger.info(

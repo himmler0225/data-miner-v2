@@ -1,15 +1,18 @@
 import secrets
 import string
 
-def generate_api_key(length: int=32) -> str:
+
+def generate_api_key(length: int = 32) -> str:
     alphabet = string.ascii_letters + string.digits
-    api_key = ''.join((secrets.choice(alphabet) for _ in range(length)))
+    api_key = "".join(secrets.choice(alphabet) for _ in range(length))
     return api_key
-if __name__ == '__main__':
-    print('Generated API Keys:')
-    print('-' * 50)
+
+
+if __name__ == "__main__":
+    print("Generated API Keys:")
+    print("-" * 50)
     for i in range(3):
-        print(f'API_KEY_{i + 1}: {generate_api_key()}')
-    print('-' * 50)
-    print('\nAdd these to your .env file:')
-    print('API_KEYS=key1,key2,key3')
+        print(f"API_KEY_{i + 1}: {generate_api_key()}")
+    print("-" * 50)
+    print("\nAdd these to your .env file:")
+    print("API_KEYS=key1,key2,key3")
