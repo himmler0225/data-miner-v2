@@ -23,9 +23,12 @@ from app.mcp.config import MCP_ENABLED
 from app.mcp.sse import mount_mcp_sse
 from app.middleware.client_info import ClientInfoMiddleware
 from app.middleware.ip_whitelist import IPWhitelistMiddleware
+from app.middleware.locale import LocaleMiddleware
 from app.middleware.logging_middleware import LoggingMiddleware
+from app.middleware.mcp_auth import MCPAuthMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.service_auth import ServiceAuthMiddleware
+from app.i18n.responses import localize_detail
 from app.schemas.response import ApiResponse
 
 Logger.setup(level=LOG_LEVEL)
@@ -53,13 +56,17 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
-if MCP_ENABLED:
-    mount_mcp_sse(app)
 
 
 @app.exception_handler(HTTPException)
-async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
-    return JSONResponse(status_code=exc.status_code, content=ApiResponse.fail(str(exc.detail)).model_dump())
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    from app.i18n.locale import resolve_locale
+
+    locale = resolve_locale(request)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ApiResponse.fail(localize_detail(str(exc.detail), locale)).model_dump(),
+    )
 
 
 @app.middleware("http")
@@ -73,6 +80,8 @@ async def add_process_time(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
+app.add_middleware(LocaleMiddleware)
+app.add_middleware(MCPAuthMiddleware)
 app.add_middleware(IPWhitelistMiddleware)
 app.add_middleware(ServiceAuthMiddleware)
 app.add_middleware(SlowAPIMiddleware)
@@ -82,6 +91,9 @@ app.include_router(youtube_router, prefix="/api", tags=["YouTube"])
 app.include_router(tiktok_router, prefix="/api/tiktok", tags=["TikTok"])
 app.include_router(movies_router, prefix="/api/movies", tags=["Movies"])
 app.include_router(admin_router)
+
+if MCP_ENABLED:
+    mount_mcp_sse(app)
 
 
 @app.get("/health", tags=["Health"])

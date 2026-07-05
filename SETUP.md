@@ -18,7 +18,7 @@
 
 - Python 3.14+
 - pip or poetry
-- PostgreSQL (for future database integration)
+- Supabase project (remote config via REST — không cần Postgres local)
 - Redis (optional, for caching)
 
 ---

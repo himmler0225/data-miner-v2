@@ -320,7 +320,7 @@ async def get_shorts_feed(proxy: str = None, max_results: int = 20) -> list[dict
                 consecutive_empty = 0
                 shorts.extend(batch)
                 logger.info(
-                    "[shorts] reel restart=%s +%s -> total %s",
+                    "[shorts] reel restart=%s +%s -> tổng %s",
                     restart,
                     len(batch),
                     len(shorts),

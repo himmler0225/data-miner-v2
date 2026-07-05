@@ -2,6 +2,8 @@ import json
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from app.i18n import t
+from app.i18n.locale import resolve_locale_from_scope
 from app.config.logger import Logger
 from app.config.settings import APP_ENV, ENABLE_IP_WHITELIST
 from app.config.settings import WHITELISTED_IPS as _IPS_LIST
@@ -44,8 +46,8 @@ def _get_client_ip_from_scope(scope: Scope, headers: dict) -> str:
     return "unknown"
 
 
-async def _send_403(send: Send) -> None:
-    body = json.dumps({"detail": "Access denied: IP address or service not whitelisted"}).encode()
+async def _send_403(send: Send, locale: str) -> None:
+    body = json.dumps({"detail": t("errors.ip_not_whitelisted", locale)}).encode()
     await send(
         {
             "type": "http.response.start",
@@ -97,4 +99,4 @@ class IPWhitelistMiddleware:
                 }
             },
         )
-        await _send_403(send)
+        await _send_403(send, resolve_locale_from_scope(scope))

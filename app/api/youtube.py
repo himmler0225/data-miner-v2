@@ -31,7 +31,17 @@ async def videos_by_topic(
 ):
     t = topic.lower()
     if t not in CHANNEL_TOPICS and t not in SEARCH_TOPICS:
-        raise HTTPException(status_code=400, detail=f"Unknown topic '{topic}'. Available: {', '.join(ALL_TOPICS)}")
+        from app.i18n import get_locale, t as tr
+
+        raise HTTPException(
+            status_code=400,
+            detail=tr(
+                "errors.unknown_topic",
+                get_locale(),
+                topic=topic,
+                available=", ".join(ALL_TOPICS),
+            ),
+        )
 
     @retry_on_failure(max_retries=3, delay=1)
     async def _():
@@ -139,7 +149,7 @@ async def get_comments_batch(
 ):
     ids = [v.strip() for v in video_ids.split(",") if v.strip()][:8]
     if not ids:
-        raise HTTPException(status_code=400, detail="video_ids is empty")
+        raise HTTPException(status_code=400, detail="errors.video_ids_empty")
 
     async def _():
         proxy = await get_proxy()
@@ -211,7 +221,7 @@ async def video_transcript(video_id: str):
 async def transcript_batch(video_ids: str = Query(..., description="Comma-separated video_ids (max 8)")):
     ids = [v.strip() for v in video_ids.split(",") if v.strip()][:8]
     if not ids:
-        raise HTTPException(status_code=400, detail="video_ids is empty")
+        raise HTTPException(status_code=400, detail="errors.video_ids_empty")
 
     async def _():
         results = await get_transcript_batch(ids)

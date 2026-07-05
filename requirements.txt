@@ -1,4 +1,4 @@
-fastapi[standard]>=0.115.12  # includes uvicorn, fastapi CLI, httpx, pydantic-settings
+fastapi[standard]>=0.128.0  # includes uvicorn, fastapi CLI, httpx, pydantic-settings
 python-dotenv>=1.1.0
 pydantic>=2.11.4
 anyio>=4.9.0

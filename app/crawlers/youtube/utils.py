@@ -52,7 +52,12 @@ def retry_on_failure(max_retries=3, delay=1):
                         f"YouTube structure changed in {func.__name__}: {e}",
                         extra={"extra_data": {"context": e.context}},
                     )
-                    raise HTTPException(status_code=502, detail=f"YouTube structure changed: {e}")
+                    from app.i18n import get_locale, t
+
+                    raise HTTPException(
+                        status_code=502,
+                        detail=t("errors.youtube_structure_changed", get_locale(), detail=str(e)),
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:

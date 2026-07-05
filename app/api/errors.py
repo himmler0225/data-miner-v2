@@ -20,8 +20,8 @@ def to_http_exception(exc: Exception) -> HTTPException:
     if isinstance(exc, (movie_client.MovieUpstreamError, TikHubError, YouTubeStructureChangedError)):
         return HTTPException(status_code=502, detail=str(exc))
     if isinstance(exc, (CrawlNetworkError, CrawlTimeoutError)):
-        return HTTPException(status_code=502, detail=str(exc))
-    return HTTPException(status_code=500, detail=str(exc))
+        return HTTPException(status_code=502, detail="errors.upstream")
+    return HTTPException(status_code=500, detail="errors.generic")
 
 
 async def api_ok(coro: Awaitable[T]) -> Any:

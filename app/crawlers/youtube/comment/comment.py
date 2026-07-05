@@ -317,7 +317,7 @@ async def get_video_comments_batch(
 
     total = sum(v["total"] for v in per_video)
     logger.info(
-        "[comments/batch] %d ids -> %d with comments, %d skipped, %d total comments",
+        "[comments/batch] %d id -> %d có comments, %d bỏ qua, tổng %d comments",
         len(video_ids),
         len(per_video),
         len(skipped),
