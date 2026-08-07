@@ -221,7 +221,7 @@ class ProxyRegistry:
             return None
         if len(entries) > 1:
             random.shuffle(entries)
-            # random start giúp chia tải đều giữa nhiều pool cùng country.
+            # Random start index spreads load evenly across multiple pools for the same country.
             self._round_robin[code] = 0
         start = self._round_robin.get(code, 0)
         for offset in range(len(entries)):
