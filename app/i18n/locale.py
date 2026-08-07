@@ -32,7 +32,12 @@ def normalize_locale(value: str | None) -> str:
 
 
 def resolve_locale(request: Request) -> str:
-    header = request.headers.get("x-locale") or request.headers.get("X-Locale")
+    header = (
+        request.headers.get("x-lang")
+        or request.headers.get("X-Lang")
+        or request.headers.get("x-locale")
+        or request.headers.get("X-Locale")
+    )
     if header:
         return normalize_locale(header)
     accept = request.headers.get("accept-language", "")
@@ -47,9 +52,10 @@ def resolve_locale(request: Request) -> str:
 
 def resolve_locale_from_scope(scope: dict) -> str:
     headers = {k.lower(): v for k, v in scope.get("headers", [])}
+    x_lang = headers.get(b"x-lang", b"").decode().strip()
     x_locale = headers.get(b"x-locale", b"").decode().strip()
-    if x_locale:
-        return normalize_locale(x_locale)
+    if x_lang or x_locale:
+        return normalize_locale(x_lang or x_locale)
     accept = headers.get(b"accept-language", b"").decode()
     for part in accept.split(","):
         token = part.split(";")[0].strip()
