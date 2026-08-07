@@ -4,13 +4,12 @@ A production-style **FastAPI** service that scrapes structured data from **YouTu
 
 Built to run behind rotating residential proxies, with centralised remote configuration, global rate limiting, and resilient parsing of constantly-changing upstream responses.
 
-**Roadmap — MCP Phase 2 (agent tool auto-discovery):** [../docs/MCP-PHASE2-GUIDE.md](../docs/MCP-PHASE2-GUIDE.md)
-
 ---
 
 ## Highlights
 
-- **3 platforms, one API** — YouTube (InnerTube + HTML), TikTok (native client with TikHub fallback), and Vietnamese movie catalogs (KKPhim / OPhim).
+- **4 sources, one API** — YouTube (InnerTube + HTML), TikTok (native client with TikHub fallback), Vietnamese movie catalogs (KKPhim / OPhim), and web search (Tavily).
+- **Same logic, two protocols** — every crawler is exposed both as a plain REST endpoint (`api/`) and as an MCP tool (`mcp/`, `tools/`), so an LLM agent (ai-layer) and a regular HTTP client hit the exact same underlying code.
 - **Resilient parsing** — upstream fields are accessed defensively; structural drift surfaces as a typed error (`YouTubeStructureChangedError`) with the exact key path instead of a random `KeyError`.
 - **Rotating proxy pools** — separate VN / US residential pools with sticky TTL pinning and graceful direct-connection fallback.
 - **Remote configuration** — proxies and rate limits are loaded from a Supabase `config` table at startup, so they can change without a redeploy.
@@ -53,6 +52,14 @@ FastAPI · Pydantic · httpx · curl_cffi · slowapi · APScheduler · Supabase 
 
 Each data type is an independent module under `crawlers/<platform>/<feature>/` with no shared state, so a feature can be tested or replaced in isolation.
 
+### Native-first, third-party fallback
+
+TikTok tries the native (reverse-engineered) client first; if the native pool is exhausted or fails, it transparently falls back to the paid TikHub API (`crawlers/tiktok/native.py` → `tikhub.py`). Same idea for movies: KKPhim → OPhim fallback chain in `crawlers/movies/client.py`.
+
+### Dual protocol: REST + MCP
+
+Crawlers are called from two front doors that share the same business logic: `api/*.py` (plain REST, used by ai-layer's HTTP client and any external caller) and `mcp/server.py` + `tools/` (Model Context Protocol tools, used by ai-layer's agent for direct LLM tool-calling). Neither reimplements crawling — both just adapt the same crawler functions to their transport.
+
 ### Error classification
 
 | Exception | Cause | Handling |
@@ -86,11 +93,16 @@ app/
 │   ├── youtube.py        # /api/videos, /api/channels, /api/playlists
 │   ├── tiktok.py         # /api/tiktok/*
 │   ├── movies.py         # /api/movies/*
+│   ├── google.py         # /api/google/search (Tavily)
 │   └── admin/            # /admin/proxy/*  (proxy management)
 ├── crawlers/
 │   ├── youtube/          # InnerTube + HTML scrapers
 │   ├── tiktok/           # native client + TikHub fallback
-│   └── movies/           # KKPhim + OPPhim catalog client
+│   ├── movies/           # KKPhim + OPhim catalog client
+│   └── google/           # Tavily web search
+├── mcp/                  # MCP server (server.py, sse.py) — same crawlers as MCP tools
+├── tools/                # MCP tool schemas + registry/handlers
+├── i18n/                 # request-locale error messages (vi/en)
 ├── config/               # settings, remote, proxy_manager, logger
 ├── middleware/           # auth, rate_limit, logging, ip_whitelist
 ├── scheduler/            # APScheduler (cleanup, health)
@@ -121,6 +133,10 @@ All endpoints require an `X-API-Key` header.
 Aliases for frontends: `GET /type/{type}` · `GET /image/webp`
 
 Per-route rate limit: `60/minute`.
+
+### Web search — `/api/google`
+
+`GET /search` (Tavily-backed)
 
 ### Admin — `/admin`
 
