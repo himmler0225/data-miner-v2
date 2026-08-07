@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from app.api.errors import api_ok
 from app.api.rate_limit_config import endpoint_limit
 from app.crawlers.movies import client as movie_client
-from app.crawlers.movies.config import MOVIE_LIST_TYPES, MovieProvider
+from app.crawlers.movies.config import MovieProvider
 from app.middleware.auth_middleware import verify_api_key
 from app.middleware.rate_limit import limiter
 from app.services.movies import list_filters

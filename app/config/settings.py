@@ -2,14 +2,6 @@ import os
 
 from dotenv import load_dotenv
 
-from app.config.rate_limits import (
-    BURST_LIMITS,
-    RATE_LIMIT_BURST,
-    RATE_LIMIT_DEFAULT,
-    RATE_LIMITS,
-    SERVICE_RATE_LIMITS,
-)
-
 load_dotenv()
 
 APP_ENV: str = os.getenv("APP_ENV", "development")
