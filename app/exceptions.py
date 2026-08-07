@@ -32,3 +32,7 @@ class NativeSearchError(TikTokError):
 
 class TikHubError(TikTokError):
     pass
+
+
+class TavilyError(CrawlNetworkError):
+    pass

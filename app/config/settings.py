@@ -30,5 +30,6 @@ HEALTH_CHECK_INTERVAL: int = int(os.getenv("HEALTH_CHECK_INTERVAL", "60"))
 CLEANUP_CRON: str = os.getenv("CLEANUP_CRON", "0 2 * * 0")
 TIKHUB_API_KEY: str = os.getenv("TIKHUB_API_KEY", "") or os.getenv("TIKAP_API_KEY", "")
 TIKAP_API_KEY: str = TIKHUB_API_KEY
+TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")

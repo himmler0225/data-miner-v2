@@ -13,7 +13,12 @@ logger = Logger.get(__name__)
 
 
 class _SSEAlreadySentResponse(Response):
-    """connect_sse đã gửi HTTP response — tránh FastAPI gửi lần 2 (gây Exception in ASGI)."""
+    """No-op ASGI response.
+
+    ``transport.connect_sse`` already sends the HTTP response itself, so this
+    prevents FastAPI/Starlette from sending a second response for the same
+    request (which would raise "Exception in ASGI application").
+    """
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         return
