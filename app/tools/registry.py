@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Literal
 
-Platform = Literal["youtube", "tiktok", "movies"]
+Platform = Literal["youtube", "tiktok"]
 
 TOOL_REGISTRY: dict[str, "AgentToolSpec"] = {}
 

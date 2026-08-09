@@ -1,6 +1,6 @@
 # Data Miner API
 
-A production-style **FastAPI** service that scrapes structured data from **YouTube, TikTok, and movie catalogs (KKPhim/OPhim)** through their internal (reverse-engineered) APIs and exposes it as a clean, authenticated REST API.
+A production-style **FastAPI** service that scrapes structured data from **YouTube and TikTok** through their internal (reverse-engineered) APIs and exposes it as a clean, authenticated REST API.
 
 Built to run behind rotating residential proxies, with centralised remote configuration, global rate limiting, and resilient parsing of constantly-changing upstream responses.
 
@@ -8,7 +8,7 @@ Built to run behind rotating residential proxies, with centralised remote config
 
 ## Highlights
 
-- **4 sources, one API** — YouTube (InnerTube + HTML), TikTok (native client with TikHub fallback), Vietnamese movie catalogs (KKPhim / OPhim), and web search (Tavily).
+- **3 sources, one API** — YouTube (InnerTube + HTML), TikTok (native client with TikHub fallback), and web search (Tavily). Movie catalog data (KKPhim/OPhim/VSMOV) is no longer crawled here — ai-layer calls `movie-aggregator-api` directly for that.
 - **Same logic, two protocols** — every crawler is exposed both as a plain REST endpoint (`api/`) and as an MCP tool (`mcp/`, `tools/`), so an LLM agent (ai-layer) and a regular HTTP client hit the exact same underlying code.
 - **Resilient parsing** — upstream fields are accessed defensively; structural drift surfaces as a typed error (`YouTubeStructureChangedError`) with the exact key path instead of a random `KeyError`.
 - **Rotating proxy pools** — separate VN / US residential pools with sticky TTL pinning and graceful direct-connection fallback.
@@ -54,7 +54,7 @@ Each data type is an independent module under `crawlers/<platform>/<feature>/` w
 
 ### Native-first, third-party fallback
 
-TikTok tries the native (reverse-engineered) client first; if the native pool is exhausted or fails, it transparently falls back to the paid TikHub API (`crawlers/tiktok/native.py` → `tikhub.py`). Same idea for movies: KKPhim → OPhim fallback chain in `crawlers/movies/client.py`.
+TikTok tries the native (reverse-engineered) client first; if the native pool is exhausted or fails, it transparently falls back to the paid TikHub API (`crawlers/tiktok/native.py` → `tikhub.py`).
 
 ### Dual protocol: REST + MCP
 
@@ -92,13 +92,11 @@ app/
 ├── api/
 │   ├── youtube.py        # /api/videos, /api/channels, /api/playlists
 │   ├── tiktok.py         # /api/tiktok/*
-│   ├── movies.py         # /api/movies/*
 │   ├── google.py         # /api/google/search (Tavily)
 │   └── admin/            # /admin/proxy/*  (proxy management)
 ├── crawlers/
 │   ├── youtube/          # InnerTube + HTML scrapers
 │   ├── tiktok/           # native client + TikHub fallback
-│   ├── movies/           # KKPhim + OPhim catalog client
 │   └── google/           # Tavily web search
 ├── mcp/                  # MCP server (server.py, sse.py) — same crawlers as MCP tools
 ├── tools/                # MCP tool schemas + registry/handlers
@@ -125,14 +123,6 @@ All endpoints require an `X-API-Key` header.
 ### TikTok — `/api/tiktok`
 
 `GET /search` (cache → native → TikHub) · `GET /trending` · `GET /video-info` · `GET /comments` · `GET /profiles/{handle}` · `GET /transcript`
-
-### Movies — `/api/movies`
-
-`GET /search` · `GET /new` · `GET /meta/genres` · `GET /meta/countries` · `GET /meta/image-proxy` · `GET /types/{type}` · `GET /genres/{slug}` · `GET /countries/{slug}` · `GET /years/{year}` · `GET /{slug}`
-
-Aliases for frontends: `GET /type/{type}` · `GET /image/webp`
-
-Per-route rate limit: `60/minute`.
 
 ### Web search — `/api/google`
 

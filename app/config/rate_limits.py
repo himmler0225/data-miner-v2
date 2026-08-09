@@ -15,7 +15,6 @@ RATE_LIMITS: dict[str, str] = {
     "comments": "15/minute",
     "location": "5/minute",
     "tiktok": "15/minute",
-    "movies": "60/minute",
 }
 
 BURST_LIMITS: dict[str, str] = {
