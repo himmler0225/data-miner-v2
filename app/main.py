@@ -14,7 +14,6 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.admin import router as admin_router
 from app.api.google import router as google_router
-from app.api.movies import router as movies_router
 from app.api.tiktok import router as tiktok_router
 from app.api.youtube import router as youtube_router
 from app.config.logger import Logger
@@ -90,7 +89,6 @@ app.add_middleware(LoggingMiddleware)
 app.add_middleware(ClientInfoMiddleware)
 app.include_router(youtube_router, prefix="/api", tags=["YouTube"])
 app.include_router(tiktok_router, prefix="/api/tiktok", tags=["TikTok"])
-app.include_router(movies_router, prefix="/api/movies", tags=["Movies"])
 app.include_router(google_router, prefix="/api/google", tags=["Google"])
 app.include_router(admin_router)
 

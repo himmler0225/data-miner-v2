@@ -5,7 +5,6 @@ from typing import Any, TypeVar
 
 from fastapi import HTTPException
 
-from app.crawlers.movies import client as movie_client
 from app.exceptions import CrawlNetworkError, CrawlTimeoutError, TikHubError, YouTubeStructureChangedError
 from app.schemas.response import ApiResponse
 
@@ -15,9 +14,7 @@ T = TypeVar("T")
 def to_http_exception(exc: Exception) -> HTTPException:
     if isinstance(exc, HTTPException):
         return exc
-    if isinstance(exc, movie_client.MovieValidationError):
-        return HTTPException(status_code=400, detail=str(exc))
-    if isinstance(exc, (movie_client.MovieUpstreamError, TikHubError, YouTubeStructureChangedError)):
+    if isinstance(exc, (TikHubError, YouTubeStructureChangedError)):
         return HTTPException(status_code=502, detail=str(exc))
     if isinstance(exc, (CrawlNetworkError, CrawlTimeoutError)):
         return HTTPException(status_code=502, detail="errors.upstream")

@@ -7,7 +7,6 @@ from app.config.http import (
     HTTP_RETRY_STATUSES,
     REMOTE_CONFIG_TIMEOUT,
 )
-from app.crawlers.movies.config import MOVIE_API_TIMEOUT
 from app.crawlers.youtube.config import (
     BROWSE_ID_TRENDING,
     CHANNEL_TAB_VIDEOS,

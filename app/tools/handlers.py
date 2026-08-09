@@ -2,7 +2,6 @@ from typing import Any
 
 from app.config.logger import Logger
 from app.config.proxy import get_proxy
-from app.crawlers.movies import client as movie_client
 from app.crawlers.youtube.channel.channel import get_channel_videos
 from app.crawlers.youtube.channel_info.channel_info import get_channel_info
 from app.crawlers.youtube.client import resolve_channel_id_from_handle
@@ -15,11 +14,10 @@ from app.crawlers.youtube.search.search import search_youtube
 from app.crawlers.youtube.shorts.shorts import get_shorts_feed
 from app.crawlers.youtube.config import CHANNEL_TOPICS, SEARCH_TOPICS
 from app.crawlers.youtube.transcript.transcript import get_transcript, get_transcript_batch
-from app.services.movies import list_filters as movie_list_filters
 from app.services.tiktok import search_videos as tiktok_search_videos
 from app.services.youtube import get_videos_by_topic
 from app.tools.registry import AgentToolSpec, register
-from app.tools.schemas import MOVIE_TOOL_SPECS, TIKTOK_TOOL_SPECS, YOUTUBE_TOOL_SPECS
+from app.tools.schemas import TIKTOK_TOOL_SPECS, YOUTUBE_TOOL_SPECS
 
 logger = Logger.get(__name__)
 
@@ -28,17 +26,6 @@ def _parse_video_ids(raw: Any) -> list[str]:
     if isinstance(raw, str):
         return [v.strip() for v in raw.split(",") if v.strip()]
     return [str(v).strip() for v in raw if str(v).strip()]
-
-
-def _movie_filters(inp: dict) -> dict:
-    return movie_list_filters(
-        category=inp.get("category"),
-        country=inp.get("country"),
-        year=inp.get("year"),
-        sort_lang=inp.get("sort_lang"),
-        sort_field=inp.get("sort_field"),
-        sort_type=inp.get("sort_type"),
-    )
 
 
 # ── YouTube handlers ──────────────────────────────────────────────────────────
@@ -223,73 +210,6 @@ async def _tiktok_transcript_handler(inp: dict) -> Any:
     return fmt
 
 
-# ── Movie handlers ────────────────────────────────────────────────────────────
-
-
-async def _movie_search_handler(inp: dict) -> Any:
-    return await movie_client.search(
-        inp.get("provider", "kkphim"),
-        keyword=inp["keyword"],
-        page=inp.get("page", 1),
-        limit=inp.get("limit", 10),
-    )
-
-
-async def _movie_get_detail_handler(inp: dict) -> Any:
-    return await movie_client.get_detail(inp.get("provider", "kkphim"), inp["slug"])
-
-
-async def _movie_list_new_handler(inp: dict) -> Any:
-    return await movie_client.get_new(inp.get("provider", "kkphim"), page=inp.get("page", 1))
-
-
-async def _movie_list_by_type_handler(inp: dict) -> Any:
-    return await movie_client.list_by_type(
-        inp.get("provider", "kkphim"),
-        inp["type"],
-        page=inp.get("page", 1),
-        limit=inp.get("limit", 10),
-        **_movie_filters(inp),
-    )
-
-
-async def _movie_list_by_genre_handler(inp: dict) -> Any:
-    return await movie_client.list_by_genre(
-        inp.get("provider", "kkphim"),
-        inp["slug"],
-        page=inp.get("page", 1),
-        limit=inp.get("limit", 10),
-        **_movie_filters(inp),
-    )
-
-
-async def _movie_list_by_country_handler(inp: dict) -> Any:
-    return await movie_client.list_by_country(
-        inp.get("provider", "kkphim"),
-        inp["slug"],
-        page=inp.get("page", 1),
-        limit=inp.get("limit", 10),
-        **_movie_filters(inp),
-    )
-
-
-async def _movie_list_by_year_handler(inp: dict) -> Any:
-    return await movie_client.list_by_year(
-        inp.get("provider", "kkphim"),
-        inp["year"],
-        page=inp.get("page", 1),
-        limit=inp.get("limit", 10),
-        **_movie_filters(inp),
-    )
-
-
-async def _movie_get_metadata_handler(inp: dict) -> Any:
-    provider = inp.get("provider", "kkphim")
-    if inp["kind"] == "genres":
-        return await movie_client.get_genres(provider)
-    return await movie_client.get_countries(provider)
-
-
 # ── Handler map + registration ────────────────────────────────────────────────
 
 _HANDLERS: dict[str, Any] = {
@@ -312,20 +232,11 @@ _HANDLERS: dict[str, Any] = {
     "tiktok_comments": _tiktok_comments_handler,
     "tiktok_profile": _tiktok_profile_handler,
     "tiktok_transcript": _tiktok_transcript_handler,
-    "movie_search": _movie_search_handler,
-    "movie_get_detail": _movie_get_detail_handler,
-    "movie_list_new": _movie_list_new_handler,
-    "movie_list_by_type": _movie_list_by_type_handler,
-    "movie_list_by_genre": _movie_list_by_genre_handler,
-    "movie_list_by_country": _movie_list_by_country_handler,
-    "movie_list_by_year": _movie_list_by_year_handler,
-    "movie_get_metadata": _movie_get_metadata_handler,
 }
 
 _PLATFORM_PREFIX = {
     "youtube_": "youtube",
     "tiktok_": "tiktok",
-    "movie_": "movies",
 }
 
 
@@ -337,7 +248,7 @@ def _platform_for(name: str) -> str:
 
 
 def _register_all() -> None:
-    for spec in (*YOUTUBE_TOOL_SPECS, *TIKTOK_TOOL_SPECS, *MOVIE_TOOL_SPECS):
+    for spec in (*YOUTUBE_TOOL_SPECS, *TIKTOK_TOOL_SPECS):
         name = spec["name"]
         handler = _HANDLERS.get(name)
         if handler is None:

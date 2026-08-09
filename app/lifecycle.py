@@ -54,13 +54,6 @@ async def shutdown(state: AppState) -> None:
 
         shutdown_scheduler()
 
-    try:
-        from app.crawlers.movies.client import close_clients
-
-        await close_clients()
-    except Exception as exc:
-        logger.warning("[shutdown] movie clients close failed: %s", exc)
-
 
 async def _start_tiktok_pool(state: AppState) -> None:
     try:
