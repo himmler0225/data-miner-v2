@@ -43,10 +43,3 @@ async def verify_api_key(api_key: str | None = Security(api_key_header)) -> str:
         )
     logger.debug("Valid API key used: %s...", api_key[:8])
     return api_key
-
-
-def get_optional_api_key(api_key: str | None = Security(api_key_header)) -> str | None:
-    valid_keys = _valid_keys()
-    if api_key and api_key in valid_keys:
-        return api_key
-    return None

@@ -149,40 +149,6 @@ class TikTokBaseService:
             "web_search_code": self._get_web_search_code(),
         }
 
-    def _get_pc_params(self) -> dict[str, str]:
-        return {
-            "aid": "1988",
-            "app_name": "tiktok_web",
-            "channel": "tiktok_web",
-            "device_id": self._generate_device_id(),
-            "odinId": self._generate_odin_id(),
-            "device_platform": "web_pc",
-            "os": "windows",
-            "WebIdLastTime": self._get_webid_last_time(),
-            "region": self.region,
-            "priority_region": "",
-            "language": "en",
-            "app_language": "en",
-            "webcast_language": "en",
-            "browser_language": "en-US",
-            "browser_name": "Mozilla",
-            "browser_online": "true",
-            "browser_platform": "Win32",
-            "browser_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
-            "cookie_enabled": "true",
-            "focus_state": "true",
-            "is_fullscreen": "false",
-            "is_page_visible": "true",
-            "screen_width": "1920",
-            "screen_height": "1080",
-            "data_collection_enabled": "true",
-            "user_is_login": "false",
-            "history_len": "3",
-            "referer": "https://www.tiktok.com/",
-            "root_referer": "https://www.tiktok.com/",
-            "tz_name": self._get_timezone_name(),
-        }
-
     def _get_mac_search_params(self) -> dict[str, str]:
         """Fingerprint matching the working browser curl: macOS Chrome, web_pc,
         web_search_code included. No search_source/from_page."""
