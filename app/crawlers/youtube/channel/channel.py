@@ -5,13 +5,50 @@ from app.config.headers import get_youtube_headers
 from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 
 from ....exceptions import YouTubeStructureChangedError
-from ..shared.parsers import join_runs
+from ..shared.parsers import find_tab_by_url_suffix, join_runs
+
+
+def _extract_lockup_video(lockup: dict) -> dict | None:
+    """Parse a channel-grid video item in the newer `lockupViewModel` shape
+    (YouTube has been migrating channel/playlist grids to this component model;
+    it replaces the older `videoRenderer`/`gridVideoRenderer` shape)."""
+    if lockup.get("contentType") != "LOCKUP_CONTENT_TYPE_VIDEO":
+        return None
+    video_id = lockup.get("contentId")
+    metadata_vm = lockup.get("metadata", {}).get("lockupMetadataViewModel", {})
+    title = metadata_vm.get("title", {}).get("content", "")
+    rows = metadata_vm.get("metadata", {}).get("contentMetadataViewModel", {}).get("metadataRows", [])
+    parts = rows[0].get("metadataParts", []) if rows else []
+    views = parts[0].get("text", {}).get("content", "") if len(parts) > 0 else ""
+    published = parts[1].get("text", {}).get("content", "") if len(parts) > 1 else ""
+    thumbnail_vm = lockup.get("contentImage", {}).get("thumbnailViewModel", {})
+    duration = ""
+    for overlay in thumbnail_vm.get("overlays", []):
+        badges = overlay.get("thumbnailBottomOverlayViewModel", {}).get("badges", [])
+        if badges:
+            duration = badges[0].get("thumbnailBadgeViewModel", {}).get("text", "")
+            break
+    return {
+        "title": title,
+        "videoId": video_id,
+        "url": f"{YOUTUBE_BASE_URL}/watch?v={video_id}",
+        "duration": duration,
+        "views": views,
+        "thumbnail": thumbnail_vm.get("image", {}).get("sources", []),
+        "public": published,
+    }
 
 
 def extract_video_items(items: list[dict]) -> list[dict]:
     videos = []
     for item in items:
         content = item.get("richItemRenderer", {}).get("content", {}) or item
+        lockup = content.get("lockupViewModel")
+        if lockup:
+            parsed = _extract_lockup_video(lockup)
+            if parsed:
+                videos.append(parsed)
+            continue
         video = content.get("videoRenderer") or content.get("gridVideoRenderer")
         if not video:
             continue
@@ -55,12 +92,9 @@ async def get_channel_videos(channel_id: str, proxy: str = None, max_results: in
                 context={"channel_id": channel_id},
             )
 
-        videos_tab = next(
-            (tab for tab in tabs if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"),
-            None,
-        )
+        videos_tab = find_tab_by_url_suffix(tabs, "/videos")
         if videos_tab:
-            endpoint = videos_tab.get("tabRenderer", {}).get("endpoint", {}).get("browseEndpoint", {})
+            endpoint = videos_tab.get("endpoint", {}).get("browseEndpoint", {})
             browse_id = endpoint.get("browseId")
             params = endpoint.get("params")
             payload = {
@@ -72,23 +106,17 @@ async def get_channel_videos(channel_id: str, proxy: str = None, max_results: in
             resp.raise_for_status()
             data = resp.json()
             tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-            videos_tab = next(
-                (tab for tab in tabs if tab.get("tabRenderer", {}).get("title", "").lower() == "videos"),
-                None,
-            )
+            videos_tab = find_tab_by_url_suffix(tabs, "/videos")
 
         if not videos_tab:
-            videos_tab = next(
-                (tab for tab in tabs if tab.get("tabRenderer", {}).get("title", "").lower() == "home"),
-                None,
-            )
+            videos_tab = find_tab_by_url_suffix(tabs, "/featured")
             if not videos_tab:
                 raise YouTubeStructureChangedError(
                     "Neither 'Videos' nor 'Home' tab found for channel",
                     context={"channel_id": channel_id},
                 )
 
-        section = videos_tab.get("tabRenderer", {}).get("content", {}).get("richGridRenderer", {}).get("contents", [])
+        section = videos_tab.get("content", {}).get("richGridRenderer", {}).get("contents", [])
         collected += extract_video_items(section)
         continuation = next(
             (

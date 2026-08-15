@@ -2,19 +2,15 @@ from app.config.constants import ENDPOINT_BROWSE
 from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 
 from ....exceptions import YouTubeStructureChangedError
+from ..shared.parsers import find_tab_by_url_suffix
 
 
 def extract_playlists_tab_info(data):
     tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-    browse_id = None
-    params = None
-    for tab in tabs:
-        tab_renderer = tab.get("tabRenderer", {})
-        if tab_renderer.get("title", "").lower() == "videos":
-            endpoint = tab_renderer.get("endpoint", {}).get("browseEndpoint", {})
-            browse_id = endpoint.get("browseId")
-            params = endpoint.get("params")
-            break
+    videos_tab = find_tab_by_url_suffix(tabs, "/videos")
+    endpoint = (videos_tab or {}).get("endpoint", {}).get("browseEndpoint", {})
+    browse_id = endpoint.get("browseId")
+    params = endpoint.get("params")
     if not browse_id or not params:
         raise YouTubeStructureChangedError(
             "Cannot find browseId or params for the Videos tab",
@@ -56,12 +52,7 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> list[dict]:
         playlist_data = resp.json()
 
         contents = playlist_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-        target_tab = None
-        for tab in contents:
-            tab_renderer = tab.get("tabRenderer", {})
-            if tab_renderer.get("title", "").lower() == "playlists":
-                target_tab = tab_renderer
-                break
+        target_tab = find_tab_by_url_suffix(contents, "/playlists")
 
         if not target_tab or "content" not in target_tab:
             endpoint = (target_tab or {}).get("endpoint", {}).get("browseEndpoint", {})
@@ -83,14 +74,7 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> list[dict]:
             resp.raise_for_status()
             playlist_data = resp.json()
             contents = playlist_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-            target_tab = next(
-                (
-                    tab.get("tabRenderer", {})
-                    for tab in contents
-                    if tab.get("tabRenderer", {}).get("title", "").lower() == "playlists"
-                ),
-                None,
-            )
+            target_tab = find_tab_by_url_suffix(contents, "/playlists")
             if not target_tab:
                 raise YouTubeStructureChangedError(
                     "Playlists tab not found after second browseEndpoint request",
@@ -130,14 +114,7 @@ async def get_playlist_videos(channel_id: str, proxy: str = None) -> list[dict]:
                         .get("title", {})
                         .get("content", "")
                     )
-                    playlist_id = (
-                        lockup.get("rendererContext", {})
-                        .get("commandContext", {})
-                        .get("onTap", {})
-                        .get("innertubeCommand", {})
-                        .get("watchEndpoint", {})
-                        .get("playlistId", "")
-                    )
+                    playlist_id = lockup.get("contentId", "")
                     playlists.append(
                         {
                             "playlistId": playlist_id,

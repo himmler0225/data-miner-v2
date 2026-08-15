@@ -29,6 +29,21 @@ def get_continuation_items(data: dict) -> list[dict]:
     return (commands[0].get("appendContinuationItemsAction", {}).get("continuationItems", [])) if commands else []
 
 
+def find_tab_by_url_suffix(tabs: list[dict], suffix: str) -> dict | None:
+    """Find a channel-page tab whose target URL ends with `suffix` (e.g. "/videos",
+    "/playlists", "/featured" for Home). Tab titles are localized to the request's
+    hl/gl (e.g. "Video"/"Danh sách phát" for hl=vi) so they can't be matched by
+    text; the URL path segment stays stable across locales.
+
+    Returns the tab's `tabRenderer` (or `expandableTabRenderer`) dict, or None."""
+    for tab in tabs:
+        renderer = tab.get("tabRenderer") or tab.get("expandableTabRenderer") or {}
+        url = renderer.get("endpoint", {}).get("commandMetadata", {}).get("webCommandMetadata", {}).get("url", "")
+        if url.endswith(suffix):
+            return renderer
+    return None
+
+
 def parse_video_renderer(video: dict) -> dict:
     views_raw = video.get("viewCountText", {}).get("simpleText", "") or video.get("shortViewCountText", {}).get(
         "simpleText", ""
