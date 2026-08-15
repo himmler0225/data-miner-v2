@@ -1,6 +1,6 @@
 """Unified API error mapping and response helper."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from typing import Any, TypeVar
 
 from fastapi import HTTPException
@@ -27,8 +27,3 @@ async def api_ok(coro: Awaitable[T]) -> Any:
         return ApiResponse.ok(await coro)
     except Exception as exc:
         raise to_http_exception(exc) from exc
-
-
-async def run_handler(handler: Callable[[], Awaitable[T]]) -> Any:
-  """Alias for route handlers that use inner `async def _()` pattern."""
-  return await api_ok(handler())

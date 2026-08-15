@@ -1,4 +1,3 @@
-import random
 import time
 from collections import deque
 
@@ -18,20 +17,6 @@ class ClientSnapshot(TypedDict):
 
 
 _pool: deque[ClientSnapshot] = deque(maxlen=CLIENT_INFO_POOL_SIZE)
-
-
-def get_pool_size() -> int:
-    return len(_pool)
-
-
-def sample_client_info() -> ClientSnapshot | None:
-    if not _pool:
-        return None
-    return random.choice(list(_pool))
-
-
-def get_all_snapshots() -> list[ClientSnapshot]:
-    return list(_pool)
 
 
 def _extract_ip(request: Request) -> str:
