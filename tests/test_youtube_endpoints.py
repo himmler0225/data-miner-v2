@@ -10,6 +10,10 @@ TestPreviouslyBrokenCrawlers calls the crawler functions directly (bypassing
 the HTTP route and its proxy selection) to verify parsing logic deterministically
 for three endpoints that were fully broken as of 2026-08-14 and have since been
 fixed here — see channel.py/playlist.py/transcript.py for the root causes.
+
+Both network-dependent classes are marked `integration`; deselect them with
+`-m "not integration"` for an offline run. Hermetic parser/flow coverage for
+the same crawlers lives in test_youtube_parsers.py.
 """
 
 import pytest
@@ -46,6 +50,7 @@ class TestYoutubeRoutesRequireAuth:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
+@pytest.mark.integration
 class TestYoutubeRoutesAreWired:
     """Hits the real crawlers over the network. Accepts 200 (worked) or 500/502
     (upstream/crawler error) so a live YouTube or proxy-pool hiccup doesn't fail
@@ -63,13 +68,12 @@ class TestYoutubeRoutesAreWired:
 
 
 async def _retry(coro_fn, attempts=3):
-    """YouTube occasionally omits a channel's Playlists tab from a response
-    entirely (observed: swapped for a 'Shows' tab on ~1/6 real requests to the
-    same channel, no code change) — real server-side variance, not a parsing
-    bug. A couple of retries smooths that out here the same way a real caller
-    would just refresh. Retries on both a raised exception and a falsy result,
-    since get_transcript() reports failure by returning None rather than raising."""
+    """Smooths over live network/YouTube variance (the Playlists-tab swap is
+    retried inside get_playlist_videos itself). Retries on both a raised
+    exception and a falsy result, since get_transcript() reports failure by
+    returning None rather than raising."""
     last_exc = None
+    result = None
     for _ in range(attempts):
         try:
             result = await coro_fn()
@@ -82,6 +86,7 @@ async def _retry(coro_fn, attempts=3):
     return result
 
 
+@pytest.mark.integration
 class TestPreviouslyBrokenCrawlers:
     """Calls crawler functions directly (proxy=None) instead of through the API
     route, so these assert the actual parsing fix rather than being at the mercy

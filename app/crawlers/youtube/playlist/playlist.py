@@ -1,22 +1,13 @@
-from app.config.constants import ENDPOINT_BROWSE
+from app.config.constants import CHANNEL_TAB_PLAYLISTS, ENDPOINT_BROWSE
 from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 
 from ....exceptions import YouTubeStructureChangedError
-from ..shared.parsers import find_tab_by_url_suffix
+from ..shared.browse import fetch_channel_tab
+from ..shared.parsers import get_first_badge_text
 
-
-def extract_playlists_tab_info(data):
-    tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-    videos_tab = find_tab_by_url_suffix(tabs, "/videos")
-    endpoint = (videos_tab or {}).get("endpoint", {}).get("browseEndpoint", {})
-    browse_id = endpoint.get("browseId")
-    params = endpoint.get("params")
-    if not browse_id or not params:
-        raise YouTubeStructureChangedError(
-            "Cannot find browseId or params for the Videos tab",
-            context={"tabs_count": len(tabs)},
-        )
-    return browse_id, params
+# YouTube intermittently serves a "Shows" tab in place of a channel's Playlists
+# tab (observed on ~1 in 6 requests to the same channel), so retry before failing.
+PLAYLISTS_TAB_ATTEMPTS = 3
 
 
 def extract_title(title_obj):
@@ -27,104 +18,60 @@ def extract_title(title_obj):
     return ""
 
 
+def _extract_lockup_playlist(lockup: dict) -> dict | None:
+    playlist_id = lockup.get("contentId")
+    if not playlist_id:
+        return None
+    thumbnail_vm = (
+        lockup.get("contentImage", {})
+        .get("collectionThumbnailViewModel", {})
+        .get("primaryThumbnail", {})
+        .get("thumbnailViewModel", {})
+    )
+    sources = thumbnail_vm.get("image", {}).get("sources") or [{}]
+    return {
+        "playlistId": playlist_id,
+        "title": lockup.get("metadata", {}).get("lockupMetadataViewModel", {}).get("title", {}).get("content", ""),
+        "thumbnail": sources[-1].get("url", ""),
+        "videoCount": get_first_badge_text(thumbnail_vm.get("overlays", [])),
+    }
+
+
+def extract_playlists_tab_items(playlists_tab: dict) -> list[dict]:
+    """Playlists from the first page of a channel's Playlists tab. Grid items that
+    aren't playlist lockups (e.g. the trailing continuationItemRenderer) are skipped."""
+    content = playlists_tab.get("content", {})
+    items = []
+    for section in content.get("sectionListRenderer", {}).get("contents", []):
+        for item in section.get("itemSectionRenderer", {}).get("contents", []):
+            items += item.get("gridRenderer", {}).get("items", [])
+    for entry in content.get("richGridRenderer", {}).get("contents", []):
+        items.append(entry.get("richItemRenderer", {}).get("content", {}))
+
+    playlists = []
+    for item in items:
+        parsed = _extract_lockup_playlist(item.get("lockupViewModel", {}))
+        if parsed:
+            playlists.append(parsed)
+    return playlists
+
+
 async def get_playlist_videos(channel_id: str, proxy: str = None) -> list[dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
-    playlists = []
 
     async with create_httpx_client(proxy=proxy) as client:
-        resp = await client.post(browse_url, json={"context": get_context(), "browseId": channel_id})
-        resp.raise_for_status()
-        data = resp.json()
-
-        browse_id, params = extract_playlists_tab_info(data)
-        if not browse_id or not params:
-            raise YouTubeStructureChangedError(
-                "browseId and params not found after first browse request",
-                context={"channel_id": channel_id},
+        for _ in range(PLAYLISTS_TAB_ATTEMPTS):
+            tabs, playlists_tab = await fetch_channel_tab(
+                client, browse_url, channel_id, CHANNEL_TAB_PLAYLISTS, "/playlists"
             )
+            if playlists_tab:
+                return extract_playlists_tab_items(playlists_tab)
 
-        resp = await client.post(
-            browse_url,
-            json={"context": get_context(), "browseId": browse_id, "params": params},
-        )
-        resp.raise_for_status()
-        playlist_data = resp.json()
-
-        contents = playlist_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-        target_tab = find_tab_by_url_suffix(contents, "/playlists")
-
-        if not target_tab or "content" not in target_tab:
-            endpoint = (target_tab or {}).get("endpoint", {}).get("browseEndpoint", {})
-            browse_id = endpoint.get("browseId")
-            params = endpoint.get("params")
-            if not browse_id or not params:
-                raise YouTubeStructureChangedError(
-                    "browseId and params not found for Playlists tab endpoint",
-                    context={"channel_id": channel_id},
-                )
-            resp = await client.post(
-                browse_url,
-                json={
-                    "context": get_context(),
-                    "browseId": browse_id,
-                    "params": params,
-                },
-            )
-            resp.raise_for_status()
-            playlist_data = resp.json()
-            contents = playlist_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-            target_tab = find_tab_by_url_suffix(contents, "/playlists")
-            if not target_tab:
-                raise YouTubeStructureChangedError(
-                    "Playlists tab not found after second browseEndpoint request",
-                    context={"channel_id": channel_id},
-                )
-
-        contents = target_tab.get("content", {}).get("sectionListRenderer", {})
-        for section in contents.get("contents", []):
-            for item in section.get("itemSectionRenderer", {}).get("contents", []):
-                for grid_item in item.get("gridRenderer", {}).get("items", []):
-                    lockup = grid_item.get("lockupViewModel", {})
-                    thumbnail_url = (
-                        lockup.get("contentImage", {})
-                        .get("collectionThumbnailViewModel", {})
-                        .get("primaryThumbnail", {})
-                        .get("thumbnailViewModel", {})
-                        .get("image", {})
-                        .get("sources", [{}])[-1]
-                        .get("url", "")
-                    )
-                    video_count = ""
-                    for overlay in (
-                        lockup.get("contentImage", {})
-                        .get("collectionThumbnailViewModel", {})
-                        .get("primaryThumbnail", {})
-                        .get("thumbnailViewModel", {})
-                        .get("overlays", [])
-                    ):
-                        badge = overlay.get("thumbnailOverlayBadgeViewModel", {}).get("thumbnailBadges", [])
-                        if badge:
-                            video_count = badge[0].get("thumbnailBadgeViewModel", {}).get("text", "")
-                            if video_count:
-                                break
-                    title = (
-                        lockup.get("metadata", {})
-                        .get("lockupMetadataViewModel", {})
-                        .get("title", {})
-                        .get("content", "")
-                    )
-                    playlist_id = lockup.get("contentId", "")
-                    playlists.append(
-                        {
-                            "playlistId": playlist_id,
-                            "title": title,
-                            "thumbnail": thumbnail_url,
-                            "videoCount": video_count,
-                        }
-                    )
-
-    return playlists
+    raise YouTubeStructureChangedError(
+        "Playlists tab not found for channel",
+        context={"channel_id": channel_id, "attempts": PLAYLISTS_TAB_ATTEMPTS, "tabs_count": len(tabs)},
+    )
 
 
 async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> list[dict]:
@@ -150,9 +97,7 @@ async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> list[
                 (tabs[0] if tabs else {})
                 .get("tabRenderer", {})
                 .get("content", {})
-                .get(
-                    "sectionListRenderer",
-                )
+                .get("sectionListRenderer", {})
                 .get("contents", [])
             )
             playlist_items_list = (contents[0] if contents else {}).get("itemSectionRenderer", {}).get("contents", [])
@@ -174,7 +119,7 @@ async def get_videos_from_playlist(playlist_id: str, proxy: str = None) -> list[
                             "title": extract_title(renderer.get("title", {})),
                             "published_time": renderer.get("publishedTimeText", {}).get("simpleText", ""),
                             "duration": renderer.get("lengthText", {}).get("simpleText", ""),
-                            "thumbnail": renderer.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", ""),
+                            "thumbnail": (renderer.get("thumbnail", {}).get("thumbnails") or [{}])[-1].get("url", ""),
                         }
                     )
                 elif "continuationItemRenderer" in item:

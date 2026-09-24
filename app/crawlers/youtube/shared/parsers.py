@@ -44,6 +44,25 @@ def find_tab_by_url_suffix(tabs: list[dict], suffix: str) -> dict | None:
     return None
 
 
+def get_browse_tabs(data: dict) -> list[dict]:
+    return data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+
+
+def get_first_badge_text(overlays: list[dict]) -> str:
+    """First thumbnail badge text (video duration, playlist video count) from a
+    `thumbnailViewModel.overlays` list. YouTube serves the badge under either
+    `thumbnailBottomOverlayViewModel.badges` or `thumbnailOverlayBadgeViewModel.thumbnailBadges`."""
+    for overlay in overlays:
+        badges = overlay.get("thumbnailBottomOverlayViewModel", {}).get("badges") or overlay.get(
+            "thumbnailOverlayBadgeViewModel", {}
+        ).get("thumbnailBadges", [])
+        for badge in badges:
+            text = badge.get("thumbnailBadgeViewModel", {}).get("text", "")
+            if text:
+                return text
+    return ""
+
+
 def parse_video_renderer(video: dict) -> dict:
     views_raw = video.get("viewCountText", {}).get("simpleText", "") or video.get("shortViewCountText", {}).get(
         "simpleText", ""

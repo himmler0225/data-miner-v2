@@ -1,11 +1,16 @@
-import base64
-
 from app.config.constants import CHANNEL_TAB_VIDEOS, ENDPOINT_BROWSE, YOUTUBE_BASE_URL
 from app.config.headers import get_youtube_headers
 from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 
 from ....exceptions import YouTubeStructureChangedError
-from ..shared.parsers import find_tab_by_url_suffix, join_runs
+from ..shared.browse import fetch_channel_tab
+from ..shared.parsers import (
+    extract_continuation_token,
+    find_tab_by_url_suffix,
+    get_continuation_items,
+    get_first_badge_text,
+    join_runs,
+)
 
 
 def _extract_lockup_video(lockup: dict) -> dict | None:
@@ -15,24 +20,23 @@ def _extract_lockup_video(lockup: dict) -> dict | None:
     if lockup.get("contentType") != "LOCKUP_CONTENT_TYPE_VIDEO":
         return None
     video_id = lockup.get("contentId")
+    if not video_id:
+        return None
     metadata_vm = lockup.get("metadata", {}).get("lockupMetadataViewModel", {})
     title = metadata_vm.get("title", {}).get("content", "")
     rows = metadata_vm.get("metadata", {}).get("contentMetadataViewModel", {}).get("metadataRows", [])
-    parts = rows[0].get("metadataParts", []) if rows else []
+    # Channel-grid lockups have a single [views, published] row; lockups that also
+    # show the channel name put it in an earlier row, so views/date is the last row.
+    rows = [row for row in rows if row.get("metadataParts")]
+    parts = rows[-1]["metadataParts"] if rows else []
     views = parts[0].get("text", {}).get("content", "") if len(parts) > 0 else ""
     published = parts[1].get("text", {}).get("content", "") if len(parts) > 1 else ""
     thumbnail_vm = lockup.get("contentImage", {}).get("thumbnailViewModel", {})
-    duration = ""
-    for overlay in thumbnail_vm.get("overlays", []):
-        badges = overlay.get("thumbnailBottomOverlayViewModel", {}).get("badges", [])
-        if badges:
-            duration = badges[0].get("thumbnailBadgeViewModel", {}).get("text", "")
-            break
     return {
         "title": title,
         "videoId": video_id,
         "url": f"{YOUTUBE_BASE_URL}/watch?v={video_id}",
-        "duration": duration,
+        "duration": get_first_badge_text(thumbnail_vm.get("overlays", [])),
         "views": views,
         "thumbnail": thumbnail_vm.get("image", {}).get("sources", []),
         "public": published,
@@ -50,7 +54,7 @@ def extract_video_items(items: list[dict]) -> list[dict]:
                 videos.append(parsed)
             continue
         video = content.get("videoRenderer") or content.get("gridVideoRenderer")
-        if not video:
+        if not video or not video.get("videoId"):
             continue
         videos.append(
             {
@@ -66,90 +70,68 @@ def extract_video_items(items: list[dict]) -> list[dict]:
     return videos
 
 
+def extract_home_tab_videos(home_tab: dict) -> list[dict]:
+    """Videos from a channel's Home tab, used when the channel has no Videos tab
+    (e.g. topic/auto-generated channels). Home is a list of shelves, served either
+    as `richGridRenderer` + `richShelfRenderer` or `sectionListRenderer` + `shelfRenderer`.
+    Home has no continuation, so this is all the videos it exposes."""
+    content = home_tab.get("content", {})
+    items = []
+    for entry in content.get("richGridRenderer", {}).get("contents", []):
+        shelf = entry.get("richSectionRenderer", {}).get("content", {}).get("richShelfRenderer")
+        items += shelf.get("contents", []) if shelf else [entry]
+    for section in content.get("sectionListRenderer", {}).get("contents", []):
+        for entry in section.get("itemSectionRenderer", {}).get("contents", []):
+            # horizontalListRenderer / expandedShelfContentsRenderer / gridRenderer
+            for renderer in entry.get("shelfRenderer", {}).get("content", {}).values():
+                if isinstance(renderer, dict):
+                    items += renderer.get("items", [])
+
+    videos, seen = [], set()
+    for video in extract_video_items(items):
+        if video["videoId"] not in seen:
+            seen.add(video["videoId"])
+            videos.append(video)
+    return videos
+
+
+def _first_continuation_token(items: list[dict]) -> str | None:
+    return next((extract_continuation_token(i) for i in items if "continuationItemRenderer" in i), None)
+
+
 async def get_channel_videos(channel_id: str, proxy: str = None, max_results: int = 100) -> list[dict]:
     api_key = await get_youtube_api_key(proxy=proxy)
     browse_url = get_youtube_api_url(ENDPOINT_BROWSE, api_key)
     headers = get_youtube_headers()
-    collected = []
-    continuation = None
-
-    encoded = CHANNEL_TAB_VIDEOS
-    missing_padding = len(encoded) % 4
-    if missing_padding:
-        encoded += "=" * (4 - missing_padding)
-    decoded = base64.b64decode(encoded).decode("utf-8")
 
     async with create_httpx_client(proxy=proxy, headers=headers) as client:
-        payload = {"context": get_context(), "browseId": channel_id, "params": decoded}
-        resp = await client.post(browse_url, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-
-        tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+        tabs, videos_tab = await fetch_channel_tab(client, browse_url, channel_id, CHANNEL_TAB_VIDEOS, "/videos")
         if not tabs:
             raise YouTubeStructureChangedError(
                 "twoColumnBrowseResultsRenderer.tabs not found for channel",
                 context={"channel_id": channel_id},
             )
 
-        videos_tab = find_tab_by_url_suffix(tabs, "/videos")
-        if videos_tab:
-            endpoint = videos_tab.get("endpoint", {}).get("browseEndpoint", {})
-            browse_id = endpoint.get("browseId")
-            params = endpoint.get("params")
-            payload = {
-                "context": get_context(),
-                "browseId": browse_id,
-                "params": params,
-            }
-            resp = await client.post(browse_url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-            videos_tab = find_tab_by_url_suffix(tabs, "/videos")
-
         if not videos_tab:
-            videos_tab = find_tab_by_url_suffix(tabs, "/featured")
-            if not videos_tab:
+            home_tab = find_tab_by_url_suffix(tabs, "/featured")
+            if not home_tab or "content" not in home_tab:
                 raise YouTubeStructureChangedError(
                     "Neither 'Videos' nor 'Home' tab found for channel",
                     context={"channel_id": channel_id},
                 )
+            return extract_home_tab_videos(home_tab)[:max_results]
 
-        section = videos_tab.get("content", {}).get("richGridRenderer", {}).get("contents", [])
-        collected += extract_video_items(section)
-        continuation = next(
-            (
-                c.get("continuationItemRenderer", {})
-                .get("continuationEndpoint", {})
-                .get("continuationCommand", {})
-                .get("token")
-                for c in section
-                if "continuationItemRenderer" in c
-            ),
-            None,
-        )
+        section = videos_tab["content"].get("richGridRenderer", {}).get("contents", [])
+        collected = extract_video_items(section)
+        continuation = _first_continuation_token(section)
 
         while continuation and len(collected) < max_results:
-            payload = {"context": get_context(), "continuation": continuation}
-            resp = await client.post(browse_url, json=payload)
+            resp = await client.post(browse_url, json={"context": get_context(), "continuation": continuation})
             resp.raise_for_status()
-            data = resp.json()
-            commands = data.get("onResponseReceivedCommands") or data.get("onResponseReceivedActions") or []
-            if not commands:
+            continuation_items = get_continuation_items(resp.json())
+            if not continuation_items:
                 break
-            continuation_items = commands[0].get("appendContinuationItemsAction", {}).get("continuationItems", [])
             collected += extract_video_items(continuation_items)
-            continuation = next(
-                (
-                    i.get("continuationItemRenderer", {})
-                    .get("continuationEndpoint", {})
-                    .get("continuationCommand", {})
-                    .get("token")
-                    for i in continuation_items
-                    if "continuationItemRenderer" in i
-                ),
-                None,
-            )
+            continuation = _first_continuation_token(continuation_items)
 
     return collected[:max_results]

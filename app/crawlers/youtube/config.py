@@ -9,7 +9,9 @@ SORT_RELEVANCE = None
 SORT_UPLOAD_DATE = "CAISAhAB"
 SORT_VIEW_COUNT = "CAMSAhAB"
 SORT_RATING = "CAESAhAB"
-CHANNEL_TAB_VIDEOS = "EgZ2aWRlb3M"
+# Base64 protobuf `params` selecting a channel tab (field 2 = tab slug), sent as-is.
+CHANNEL_TAB_VIDEOS = "EgZ2aWRlb3M="
+CHANNEL_TAB_PLAYLISTS = "EglwbGF5bGlzdHM="
 CLIENT_NAME = "WEB"
 CLIENT_VERSION = "2.20260603.05.00"
 CLIENT_HL = "vi"
