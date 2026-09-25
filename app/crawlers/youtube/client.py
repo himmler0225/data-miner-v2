@@ -19,6 +19,7 @@ from app.config.constants import (
     YOUTUBE_KEY_TTL,
 )
 from app.config.logger import Logger
+from app.exceptions import YouTubeNotFoundError
 
 logger = Logger.get(__name__)
 
@@ -160,18 +161,20 @@ def get_context(original_url: str | None = None, user_agent: str | None = None) 
     }
 
 
-async def resolve_channel_id_from_handle(handle: str) -> str:
-    async with create_httpx_client() as client:
-        url = f"{YOUTUBE_BASE_URL}/@{handle}"
-        resp = await client.get(url)
-        html = resp.text
-        match = re.search(r"channel_id=([a-zA-Z0-9_-]{24})", html)
-        if match:
-            return match.group(1)
-        match = re.search(r'"browseId":"(UC[^\"]+)"', html)
-        if match:
-            return match.group(1)
-        raise Exception("Channel_id not found")
+async def resolve_channel_id_from_handle(handle: str, proxy: str | None = None) -> str:
+    """Channel id (UC...) for a handle, with or without the leading "@"."""
+    handle = handle.lstrip("@")
+    async with create_httpx_client(proxy=proxy) as client:
+        resp = await client.get(f"{YOUTUBE_BASE_URL}/@{handle}")
+    if resp.status_code == 404:
+        raise YouTubeNotFoundError(f"Channel @{handle} not found")
+    resp.raise_for_status()
+    match = re.search(r"channel_id=([a-zA-Z0-9_-]{24})", resp.text) or re.search(
+        r'"browseId":"(UC[a-zA-Z0-9_-]{22})"', resp.text
+    )
+    if not match:
+        raise YouTubeNotFoundError(f"Channel @{handle} not found")
+    return match.group(1)
 
 
 def get_httpx_proxies(proxy: str = None):

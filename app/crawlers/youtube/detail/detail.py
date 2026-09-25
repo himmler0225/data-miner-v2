@@ -4,7 +4,10 @@ from app.config.constants import CLIENT_GL, CLIENT_HL, ENDPOINT_PLAYER, YOUTUBE_
 from app.config.headers import get_youtube_headers
 from app.config.logger import Logger
 from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
-from app.crawlers.youtube.utils import parse_view_count
+from app.crawlers.youtube.utils import parse_count, parse_duration_seconds
+from app.exceptions import CrawlNetworkError, YouTubeNotFoundError
+
+from ..shared.models import make_video
 
 logger = Logger.get(__name__)
 
@@ -73,61 +76,54 @@ async def _get_via_api(video_id: str, proxy: str = None) -> dict | None:
 
 
 def _parse_player_response(data: dict, video_id: str) -> dict:
-    status = data.get("playabilityStatus", {})
-    yt_status = status.get("status")
-    if yt_status != "OK":
-        return {
-            "error": True,
-            "reason": status.get("reason", "Unavailable"),
-            "status": yt_status,
-        }
-
     video_details = data.get("videoDetails", {})
     streaming_data = data.get("streamingData", {})
     microformat = data.get("microformat", {}).get("playerMicroformatRenderer", {})
     description = video_details.get("shortDescription") or microformat.get("description", {}).get("simpleText") or ""
-    thumbnails = video_details.get("thumbnail", {}).get("thumbnails", [])
-    if not thumbnails:
-        vid = video_details.get("videoId") or video_id
-        thumbnails = [{"url": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"}]
-
     return {
-        "video_id": video_details.get("videoId") or video_id,
-        "title": video_details.get("title"),
-        "author": video_details.get("author"),
-        "channel_id": video_details.get("channelId") or None,
-        "description": description,
-        "length_seconds": video_details.get("lengthSeconds"),
-        "views": parse_view_count(video_details.get("viewCount")),
-        "is_live_content": video_details.get("isLiveContent"),
-        "thumbnails": thumbnails,
-        "formats": streaming_data.get("formats", []),
-        "adaptive_formats": streaming_data.get("adaptiveFormats", []),
+        **make_video(
+            video_id=video_details.get("videoId") or video_id,
+            title=video_details.get("title", ""),
+            description=description,
+            channel_id=video_details.get("channelId"),
+            channel_name=video_details.get("author", ""),
+            thumbnails=video_details.get("thumbnail", {}).get("thumbnails"),
+            duration_seconds=parse_duration_seconds(video_details.get("lengthSeconds")),
+            view_count=parse_count(video_details.get("viewCount")),
+            published_time=microformat.get("publishDate", ""),
+            is_live=bool(video_details.get("isLive")),
+            is_short=False,
+        ),
+        "is_live_content": bool(video_details.get("isLiveContent")),
         "keywords": video_details.get("keywords", []),
         "category": microformat.get("category", ""),
-        "publish_date": microformat.get("publishDate", ""),
+        "formats": streaming_data.get("formats", []),
+        "adaptive_formats": streaming_data.get("adaptiveFormats", []),
     }
 
 
-async def get_video_detail(video_id: str, proxy: str = None) -> dict:
-    data = await _get_via_watch_page(video_id, proxy=proxy)
-    result = _parse_player_response(data, video_id) if data else {"error": True, "status": None}
+def _playability(data: dict | None) -> tuple[str | None, str]:
+    status = (data or {}).get("playabilityStatus", {})
+    return status.get("status"), status.get("reason", "")
 
-    if result.get("error"):
-        logger.info(
-            "[detail] watch_page blocked, trying API%s, trying player API for %s",
-            result.get("status"),
-            video_id,
-        )
+
+async def get_video_detail(video_id: str, proxy: str | None = None) -> dict:
+    """Full metadata of one video (watch page first, player API as fallback).
+
+    Raises YouTubeNotFoundError when YouTube reports the video unplayable
+    (removed, private, age/login-gated), CrawlNetworkError when neither source
+    returned a player response at all."""
+    data = await _get_via_watch_page(video_id, proxy=proxy)
+    status, reason = _playability(data)
+    if status != "OK":
+        logger.info("[detail] watch page gave status=%s for %s, trying player API", status, video_id)
         api_data = await _get_via_api(video_id, proxy=proxy)
         if api_data:
-            result = _parse_player_response(api_data, video_id)
+            data = api_data
+            status, reason = _playability(api_data)
 
-    if result.get("error"):
-        logger.warning(
-            "[detail] both methods failed for %s (status=%s)",
-            video_id,
-            result.get("status"),
-        )
-
-    return result
+    if status == "OK":
+        return _parse_player_response(data, video_id)
+    if status is None:
+        raise CrawlNetworkError(f"Could not fetch a player response for video {video_id}")
+    raise YouTubeNotFoundError(f"Video {video_id} is not available ({status}): {reason or 'no reason given'}")

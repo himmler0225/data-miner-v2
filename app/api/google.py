@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from app.api.errors import api_ok
 from app.api.rate_limit_config import endpoint_limit
 from app.crawlers.google import format_search, search
-from app.crawlers.youtube.utils import retry_on_failure
+from app.crawlers.retry import retry_on_failure
 from app.middleware.auth_middleware import verify_api_key
 from app.middleware.rate_limit import limiter
 

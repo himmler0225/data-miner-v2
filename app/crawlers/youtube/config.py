@@ -34,3 +34,17 @@ SEARCH_TOPICS: dict[str, tuple[str, str]] = {
     "travel": ("du lịch việt nam", "view_count"),
 }
 ALL_TOPICS = list(CHANNEL_TOPICS.keys()) + list(SEARCH_TOPICS.keys())
+
+# Paging for list endpoints (REST `limit` / MCP `max_results`).
+DEFAULT_PAGE_LIMIT = 20
+MAX_PAGE_LIMIT = 50
+# Max video ids per batch call (comments/transcript batch).
+MAX_BATCH_IDS = 8
+BATCH_CONCURRENCY = 3
+
+# Service-level result cache (seconds).
+CACHE_MAX_ENTRIES = 1000
+CACHE_TTL_LIST = 300
+CACHE_TTL_ITEM = 600
+CACHE_TTL_TRANSCRIPT = 3600
+CACHE_TTL_HANDLE = 86400

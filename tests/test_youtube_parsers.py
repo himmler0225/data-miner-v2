@@ -1,164 +1,89 @@
-"""Hermetic tests for the YouTube channel videos/playlists crawlers.
+"""Hermetic tests for YouTube parsing and the per-page crawler functions.
 
-Responses are hand-built innertube JSON trimmed to the fields the parsers read,
-and HTTP is replaced by a scripted fake client, so these run without network
-(the live checks are in test_youtube_endpoints.py, marked `integration`).
+HTTP is replaced by a scripted fake client (tests/youtube_fixtures.py), so these
+run without network. Live checks are in test_youtube_endpoints.py (`integration`).
 """
 
-import httpx
 import pytest
 
 from app.config.constants import CHANNEL_TAB_PLAYLISTS, CHANNEL_TAB_VIDEOS
 from app.crawlers.youtube.channel import channel
-from app.crawlers.youtube.channel.channel import (
-    _extract_lockup_video,
-    extract_home_tab_videos,
-    extract_video_items,
-)
+from app.crawlers.youtube.channel.channel import extract_home_tab_videos
+from app.crawlers.youtube.channel_info.channel_info import parse_channel_info
+from app.crawlers.youtube.comment import comment
 from app.crawlers.youtube.playlist import playlist
-from app.crawlers.youtube.playlist.playlist import extract_playlists_tab_items
+from app.crawlers.youtube.playlist.playlist import parse_playlist_items
+from app.crawlers.youtube.search import search
+from app.crawlers.youtube.shared.models import (
+    extract_videos,
+    video_from_lockup,
+    video_from_playlist_renderer,
+    video_from_renderer,
+)
 from app.crawlers.youtube.shared.parsers import find_tab_by_url_suffix, get_first_badge_text
-from app.exceptions import YouTubeStructureChangedError
+from app.crawlers.youtube.utils import format_duration, parse_count, parse_duration_seconds
+from app.exceptions import YouTubeNotFoundError, YouTubeStructureChangedError
+from tests.youtube_fixtures import (
+    CHANNEL_ID,
+    badge,
+    browse_response,
+    continuation_item,
+    continuation_response,
+    install_fake_client,
+    make_tab,
+    playlist_lockup,
+    playlist_page_response,
+    playlist_video_renderer,
+    playlists_grid,
+    rich_grid,
+    search_response,
+    video_lockup,
+    video_renderer,
+)
 
 pytestmark = pytest.mark.unit
 
-CHANNEL_ID = "UC_test"
+VIDEO = "dQw4w9WgXcQ"
 
 
-# --- builders ---------------------------------------------------------------
+# --- utils ------------------------------------------------------------------
 
 
-def make_tab(title, url_suffix, content=None, params="tab-params"):
-    renderer = {
-        "title": title,
-        "endpoint": {
-            "browseEndpoint": {"browseId": CHANNEL_ID, "params": params},
-            "commandMetadata": {"webCommandMetadata": {"url": f"/@test{url_suffix}"}},
-        },
-    }
-    if content is not None:
-        renderer["content"] = content
-    return {"tabRenderer": renderer}
+class TestParseCount:
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("1.234.567 lượt xem", 1_234_567),
+            ("1,234,567 views", 1_234_567),
+            ("1,2 Tr lượt xem", 1_200_000),
+            ("3,4 N lượt xem", 3_400),
+            ("1,5 T lượt xem", 1_500_000_000),
+            ("12K views", 12_000),
+            ("1.2M subscribers", 1_200_000),
+            ("2,5 Tr người đăng ký", 2_500_000),
+            ("12 video", 12),
+            ("1.234 đang xem", 1_234),
+            (987, 987),
+            ("Chưa có lượt xem", None),
+            ("", None),
+            (None, None),
+        ],
+    )
+    def test_parse_count(self, text, expected):
+        assert parse_count(text) == expected
+
+    @pytest.mark.parametrize(
+        "text,expected", [("3:21", 201), ("1:02:03", 3723), ("245", 245), ("", None), ("LIVE", None)]
+    )
+    def test_parse_duration_seconds(self, text, expected):
+        assert parse_duration_seconds(text) == expected
+
+    @pytest.mark.parametrize("seconds,expected", [(201, "3:21"), (3723, "1:02:03"), (5, "0:05"), (None, "")])
+    def test_format_duration(self, seconds, expected):
+        assert format_duration(seconds) == expected
 
 
-def browse_response(*tabs):
-    return {"contents": {"twoColumnBrowseResultsRenderer": {"tabs": list(tabs)}}}
-
-
-def badge(text, shape="bottom"):
-    if shape == "bottom":
-        return {"thumbnailBottomOverlayViewModel": {"badges": [{"thumbnailBadgeViewModel": {"text": text}}]}}
-    return {"thumbnailOverlayBadgeViewModel": {"thumbnailBadges": [{"thumbnailBadgeViewModel": {"text": text}}]}}
-
-
-def video_lockup(video_id, title="t", rows=(("1 N lượt xem", "2 ngày trước"),), overlays=None):
-    return {
-        "lockupViewModel": {
-            "contentId": video_id,
-            "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
-            "metadata": {
-                "lockupMetadataViewModel": {
-                    "title": {"content": title},
-                    "metadata": {
-                        "contentMetadataViewModel": {
-                            "metadataRows": [{"metadataParts": [{"text": {"content": p}} for p in row]} for row in rows]
-                        }
-                    },
-                }
-            },
-            "contentImage": {
-                "thumbnailViewModel": {
-                    "image": {"sources": [{"url": "https://i.ytimg.com/x.jpg"}]},
-                    "overlays": overlays if overlays is not None else [badge("10:00")],
-                }
-            },
-        }
-    }
-
-
-def playlist_lockup(playlist_id, title="p", sources=None, overlays=None):
-    return {
-        "lockupViewModel": {
-            "contentId": playlist_id,
-            "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST",
-            "metadata": {"lockupMetadataViewModel": {"title": {"content": title}}},
-            "contentImage": {
-                "collectionThumbnailViewModel": {
-                    "primaryThumbnail": {
-                        "thumbnailViewModel": {
-                            "image": {"sources": sources if sources is not None else [{"url": "a"}, {"url": "b"}]},
-                            "overlays": overlays if overlays is not None else [badge("12 video", "overlay")],
-                        }
-                    }
-                }
-            },
-        }
-    }
-
-
-def continuation_item(token):
-    return {"continuationItemRenderer": {"continuationEndpoint": {"continuationCommand": {"token": token}}}}
-
-
-def rich_grid(*items):
-    # Continuation entries sit at the grid's top level, not inside richItemRenderer.
-    return {
-        "richGridRenderer": {
-            "contents": [i if "continuationItemRenderer" in i else {"richItemRenderer": {"content": i}} for i in items]
-        }
-    }
-
-
-def playlists_grid(*items):
-    return {
-        "sectionListRenderer": {
-            "contents": [{"itemSectionRenderer": {"contents": [{"gridRenderer": {"items": list(items)}}]}}]
-        }
-    }
-
-
-# --- fake HTTP --------------------------------------------------------------
-
-
-class FakeClient:
-    """Answers each POST by calling `handler(payload)`, recording every payload.
-    A handler may return an int status code to simulate an HTTP error."""
-
-    def __init__(self, handler):
-        self.handler = handler
-        self.requests = []
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return False
-
-    async def post(self, url, json):
-        self.requests.append(json)
-        result = self.handler(json)
-        request = httpx.Request("POST", url)
-        if isinstance(result, int):
-            return httpx.Response(result, request=request)
-        return httpx.Response(200, json=result, request=request)
-
-
-@pytest.fixture
-def fake_youtube(monkeypatch):
-    def install(module, handler):
-        client = FakeClient(handler)
-
-        async def fake_api_key(proxy=None):
-            return "key"
-
-        monkeypatch.setattr(module, "create_httpx_client", lambda **kwargs: client)
-        monkeypatch.setattr(module, "get_youtube_api_key", fake_api_key)
-        return client
-
-    return install
-
-
-# --- parsers ----------------------------------------------------------------
+# --- parsers / models -------------------------------------------------------
 
 
 class TestFindTabByUrlSuffix:
@@ -185,270 +110,467 @@ class TestFirstBadgeText:
         assert get_first_badge_text([]) == ""
 
 
-class TestExtractLockupVideo:
-    def test_parses_channel_grid_lockup(self):
-        video = _extract_lockup_video(video_lockup("vid1", "Title")["lockupViewModel"])
-        assert video == {
-            "title": "Title",
-            "videoId": "vid1",
+class TestVideoModels:
+    def test_lockup(self):
+        assert video_from_lockup(video_lockup("vid1", "Title")["lockupViewModel"]) == {
+            "video_id": "vid1",
             "url": "https://www.youtube.com/watch?v=vid1",
+            "title": "Title",
+            "description": "",
+            "channel_id": None,
+            "channel_name": "",
+            "thumbnails": [{"url": "https://i.ytimg.com/x.jpg"}],
             "duration": "10:00",
-            "views": "1 N lượt xem",
-            "thumbnail": [{"url": "https://i.ytimg.com/x.jpg"}],
-            "public": "2 ngày trước",
+            "duration_seconds": 600,
+            "view_count": 1_200_000,
+            "published_time": "2 ngày trước",
+            "is_live": False,
+            "is_short": False,
         }
 
-    def test_views_and_date_come_from_last_row_when_channel_row_present(self):
-        lockup = video_lockup("vid1", rows=(("Channel name",), ("5 N lượt xem", "1 tuần trước")))
-        video = _extract_lockup_video(lockup["lockupViewModel"])
-        assert (video["views"], video["public"]) == ("5 N lượt xem", "1 tuần trước")
+    def test_lockup_views_from_last_row_and_overlay_badge(self):
+        lockup = video_lockup(
+            "vid1", rows=(("Channel name",), ("5 N lượt xem", "1 tuần trước")), overlays=[badge("1:02:03", "overlay")]
+        )
+        video = video_from_lockup(lockup["lockupViewModel"])
+        assert (video["view_count"], video["published_time"], video["duration_seconds"]) == (5000, "1 tuần trước", 3723)
 
-    def test_duration_from_overlay_badge_shape(self):
-        lockup = video_lockup("vid1", overlays=[badge("1:02:03", "overlay")])
-        assert _extract_lockup_video(lockup["lockupViewModel"])["duration"] == "1:02:03"
-
-    def test_skips_missing_content_id(self):
+    def test_lockup_skips_missing_id_and_non_videos(self):
         lockup = video_lockup("vid1")["lockupViewModel"]
         del lockup["contentId"]
-        assert _extract_lockup_video(lockup) is None
+        assert video_from_lockup(lockup) is None
+        assert video_from_lockup(playlist_lockup("PL1")["lockupViewModel"]) is None
 
-    def test_skips_non_video_lockups(self):
-        lockup = playlist_lockup("PL1")["lockupViewModel"]
-        assert _extract_lockup_video(lockup) is None
+    def test_search_renderer(self):
+        video = video_from_renderer(video_renderer("abc", "Hello")["videoRenderer"])
+        assert video["title"] == "Hello"
+        assert (video["channel_id"], video["channel_name"]) == ("UCowner", "Owner")
+        assert video["description"] == "snippet"
+        assert (video["duration"], video["duration_seconds"]) == ("3:21", 201)
+        assert video["view_count"] == 1_234_567
+        assert video["is_live"] is False
 
+    def test_live_renderer(self):
+        video = video_from_renderer(video_renderer("abc", live=True)["videoRenderer"])
+        assert video["is_live"] is True
+        assert video["view_count"] == 1234
+        assert video["duration"] == "" and video["duration_seconds"] is None
 
-class TestExtractVideoItems:
-    def test_mixes_lockup_and_legacy_shapes_and_skips_junk(self):
-        legacy = {"videoRenderer": {"videoId": "old1", "title": {"runs": [{"text": "Old"}]}}}
+    def test_playlist_renderer(self):
+        video = video_from_playlist_renderer(playlist_video_renderer("pv1")["playlistVideoRenderer"])
+        assert (video["duration_seconds"], video["view_count"], video["published_time"]) == (245, 3400, "2 năm trước")
+        assert video["channel_name"] == "Owner"
+
+    def test_extract_videos_mixes_shapes_and_skips_junk(self):
         items = [
             {"richItemRenderer": {"content": video_lockup("new1")}},
-            {"richItemRenderer": {"content": legacy}},
+            {"richItemRenderer": {"content": {"gridVideoRenderer": {"videoId": "old1"}}}},
+            video_renderer("s1"),
+            playlist_video_renderer("p1"),
             {"richItemRenderer": {"content": {"videoRenderer": {"title": {"simpleText": "no id"}}}}},
             continuation_item("tok"),
         ]
-        assert [v["videoId"] for v in extract_video_items(items)] == ["new1", "old1"]
+        assert [v["video_id"] for v in extract_videos(items)] == ["new1", "old1", "s1", "p1"]
 
 
-class TestExtractHomeTabVideos:
+class TestHomeTab:
     def test_rich_grid_shelves(self):
-        home = make_tab(
-            "Trang chủ",
-            "/featured",
-            {
-                "richGridRenderer": {
-                    "contents": [
-                        {
-                            "richSectionRenderer": {
-                                "content": {
-                                    "richShelfRenderer": {
-                                        "contents": [
-                                            {"richItemRenderer": {"content": video_lockup("a")}},
-                                            {"richItemRenderer": {"content": playlist_lockup("RDCLAK1")}},
-                                        ]
-                                    }
-                                }
-                            }
-                        },
-                        {"richItemRenderer": {"content": video_lockup("b")}},
-                    ]
+        shelf = {
+            "richSectionRenderer": {
+                "content": {
+                    "richShelfRenderer": {
+                        "contents": [
+                            {"richItemRenderer": {"content": video_lockup("a")}},
+                            {"richItemRenderer": {"content": playlist_lockup("RDCLAK1")}},
+                        ]
+                    }
                 }
-            },
-        )["tabRenderer"]
-        assert [v["videoId"] for v in extract_home_tab_videos(home)] == ["a", "b"]
+            }
+        }
+        grid = {"richGridRenderer": {"contents": [shelf, {"richItemRenderer": {"content": video_lockup("b")}}]}}
+        assert [v["video_id"] for v in extract_home_tab_videos({"content": grid})] == ["a", "b"]
 
     def test_section_list_shelves_deduplicated(self):
         def shelf(*items):
-            return {
-                "shelfRenderer": {"content": {"horizontalListRenderer": {"items": list(items)}}},
-            }
+            return {"shelfRenderer": {"content": {"horizontalListRenderer": {"items": list(items)}}}}
 
-        home = make_tab(
-            "Home",
-            "/featured",
+        sections = [
+            {"itemSectionRenderer": {"contents": [shelf({"gridVideoRenderer": {"videoId": "a"}})]}},
+            {"itemSectionRenderer": {"contents": [shelf(video_lockup("a"), video_lockup("c"))]}},
+        ]
+        home = {"content": {"sectionListRenderer": {"contents": sections}}}
+        assert [v["video_id"] for v in extract_home_tab_videos(home)] == ["a", "c"]
+
+
+class TestPlaylistItems:
+    def test_grid_page(self):
+        items = [
+            playlist_lockup("PL1", "First"),
+            playlist_lockup("PL2", "Second", sources=[], overlays=[badge("3 video", "bottom")]),
+            continuation_item("tok"),
+        ]
+        playlists, token = parse_playlist_items(items)
+        assert token == "tok"
+        assert playlists == [
             {
-                "sectionListRenderer": {
-                    "contents": [
-                        {"itemSectionRenderer": {"contents": [shelf({"gridVideoRenderer": {"videoId": "a"}})]}},
-                        {"itemSectionRenderer": {"contents": [shelf(video_lockup("a"), video_lockup("c"))]}},
-                    ]
-                }
+                "playlist_id": "PL1",
+                "url": "https://www.youtube.com/playlist?list=PL1",
+                "title": "First",
+                "thumbnails": [{"url": "a"}, {"url": "b"}],
+                "video_count": 12,
             },
-        )["tabRenderer"]
-        assert [v["videoId"] for v in extract_home_tab_videos(home)] == ["a", "c"]
+            {
+                "playlist_id": "PL2",
+                "url": "https://www.youtube.com/playlist?list=PL2",
+                "title": "Second",
+                "thumbnails": [],
+                "video_count": 3,
+            },
+        ]
 
-
-class TestExtractPlaylistsTabItems:
-    def test_skips_continuation_and_tolerates_missing_thumbnail(self):
-        tab = {
-            "content": playlists_grid(
-                playlist_lockup("PL1", "First"),
-                playlist_lockup("PL2", "Second", sources=[], overlays=[badge("3 video", "bottom")]),
-                continuation_item("tok"),
-            )
-        }
-        assert extract_playlists_tab_items(tab) == (
-            [
-                {"playlistId": "PL1", "title": "First", "thumbnail": "b", "videoCount": "12 video"},
-                {"playlistId": "PL2", "title": "Second", "thumbnail": "", "videoCount": "3 video"},
-            ],
-            "tok",
-        )
-
-    def test_rich_grid_shape(self):
-        tab = {
-            "content": {
-                "richGridRenderer": {
-                    "contents": [{"richItemRenderer": {"content": playlist_lockup("PL1")}}, continuation_item("tok")]
-                }
-            }
-        }
-        playlists, token = extract_playlists_tab_items(tab)
-        assert [p["playlistId"] for p in playlists] == ["PL1"]
+    def test_rich_grid_page(self):
+        items = rich_grid(playlist_lockup("PL1"), continuation_item("tok"))["richGridRenderer"]["contents"]
+        playlists, token = parse_playlist_items(items)
+        assert [p["playlist_id"] for p in playlists] == ["PL1"]
         assert token == "tok"
 
 
-# --- crawler flows ----------------------------------------------------------
+class TestChannelInfo:
+    def _data(self, rows):
+        metadata_rows = [{"metadataParts": [{"text": {"content": p}} for p in row]} for row in rows]
+        header_vm = {"metadata": {"contentMetadataViewModel": {"metadataRows": metadata_rows}}}
+        return {
+            "metadata": {
+                "channelMetadataRenderer": {
+                    "externalId": CHANNEL_ID,
+                    "title": "Name",
+                    "description": "d",
+                    "avatar": {"thumbnails": [{"url": "s"}, {"url": "l"}]},
+                }
+            },
+            "header": {"pageHeaderRenderer": {"content": {"pageHeaderViewModel": header_vm}}},
+        }
+
+    @pytest.mark.parametrize(
+        "rows",
+        [
+            (("@name",), ("2,5 Tr người đăng ký", "1.234 video")),
+            (("@name",), ("2.5M subscribers", "1,234 videos")),
+        ],
+    )
+    def test_counts_in_both_locales(self, rows):
+        info = parse_channel_info(self._data(rows))
+        assert (info["handle"], info["subscriber_count"], info["video_count"]) == ("@name", 2_500_000, 1234)
+        assert info["avatar"] == "l"
+
+    def test_missing_channel_is_not_found(self):
+        with pytest.raises(YouTubeNotFoundError):
+            parse_channel_info({"responseContext": {}})
 
 
-class TestGetChannelVideos:
-    async def test_single_request_when_params_select_videos_tab(self, fake_youtube):
-        client = fake_youtube(
+# --- crawler pages ----------------------------------------------------------
+
+
+def videos_tab(*items):
+    return make_tab("Video", "/videos", rich_grid(*items))
+
+
+def playlists_tab(*items):
+    return make_tab("Danh sách phát", "/playlists", playlists_grid(*items))
+
+
+def ids(items, key="video_id"):
+    return [item[key] for item in items]
+
+
+class TestChannelVideosPage:
+    async def test_params_select_videos_tab_in_one_request(self, monkeypatch):
+        client = install_fake_client(
+            monkeypatch,
             channel,
-            lambda p: browse_response(
-                make_tab("Trang chủ", "/featured"), make_tab("Video", "/videos", rich_grid(video_lockup("v1")))
-            ),
+            lambda p: browse_response(make_tab("Trang chủ", "/featured"), videos_tab(video_lockup("v1"))),
         )
-        videos = await channel.get_channel_videos(CHANNEL_ID, max_results=10)
-        assert [v["videoId"] for v in videos] == ["v1"]
+        videos, token = await channel.fetch_channel_videos_page(CHANNEL_ID)
+        assert (ids(videos), token) == (["v1"], None)
         assert len(client.requests) == 1
         assert client.requests[0]["params"] == CHANNEL_TAB_VIDEOS
 
-    async def test_follows_tab_endpoint_when_params_ignored(self, fake_youtube):
+    async def test_follows_tab_endpoint_when_params_ignored(self, monkeypatch):
         def handler(payload):
             if payload["params"] == CHANNEL_TAB_VIDEOS:  # Home served, Videos tab not selected
                 return browse_response(make_tab("Trang chủ", "/featured", {}), make_tab("Video", "/videos"))
-            return browse_response(make_tab("Video", "/videos", rich_grid(video_lockup("v1"))))
+            return browse_response(videos_tab(video_lockup("v1")))
 
-        client = fake_youtube(channel, handler)
-        videos = await channel.get_channel_videos(CHANNEL_ID)
-        assert [v["videoId"] for v in videos] == ["v1"]
+        client = install_fake_client(monkeypatch, channel, handler)
+        videos, _ = await channel.fetch_channel_videos_page(CHANNEL_ID)
+        assert ids(videos) == ["v1"]
         assert client.requests[1]["params"] == "tab-params"
 
-    async def test_retries_without_params_on_400(self, fake_youtube):
+    async def test_retries_without_params_on_400(self, monkeypatch):
         def handler(payload):
-            if "params" in payload and payload["params"] == CHANNEL_TAB_VIDEOS:
+            if payload.get("params") == CHANNEL_TAB_VIDEOS:
                 return 400
-            return browse_response(make_tab("Video", "/videos", rich_grid(video_lockup("v1"))))
+            return browse_response(videos_tab(video_lockup("v1")))
 
-        client = fake_youtube(channel, handler)
-        assert [v["videoId"] for v in await channel.get_channel_videos(CHANNEL_ID)] == ["v1"]
+        client = install_fake_client(monkeypatch, channel, handler)
+        videos, _ = await channel.fetch_channel_videos_page(CHANNEL_ID)
+        assert ids(videos) == ["v1"]
         assert "params" not in client.requests[1]
 
-    async def test_paginates_with_continuation_up_to_max_results(self, fake_youtube):
+    async def test_first_page_token_then_continuation_page(self, monkeypatch):
         def handler(payload):
             if "continuation" in payload:
-                items = [video_lockup("v2"), video_lockup("v3"), continuation_item("tok2")]
-                return {"onResponseReceivedActions": [{"appendContinuationItemsAction": {"continuationItems": items}}]}
-            return browse_response(
-                make_tab("Video", "/videos", rich_grid(video_lockup("v1"), continuation_item("tok1")))
-            )
+                return continuation_response([video_lockup("v2"), continuation_item("tok2")])
+            return browse_response(videos_tab(video_lockup("v1"), continuation_item("tok1")))
 
-        client = fake_youtube(channel, handler)
-        videos = await channel.get_channel_videos(CHANNEL_ID, max_results=2)
-        assert [v["videoId"] for v in videos] == ["v1", "v2"]
-        assert client.requests[1]["continuation"] == "tok1"
-        assert len(client.requests) == 2
+        client = install_fake_client(monkeypatch, channel, handler)
+        videos, token = await channel.fetch_channel_videos_page(CHANNEL_ID)
+        assert (ids(videos), token) == (["v1"], "tok1")
+        videos, token = await channel.fetch_channel_videos_page(CHANNEL_ID, token="tok1")
+        assert (ids(videos), token) == (["v2"], "tok2")
+        assert client.requests[-1]["continuation"] == "tok1"
 
-    async def test_falls_back_to_home_tab_videos(self, fake_youtube):
+    async def test_falls_back_to_home_tab(self, monkeypatch):
         home = {"richGridRenderer": {"contents": [{"richItemRenderer": {"content": video_lockup("h1")}}]}}
-        fake_youtube(channel, lambda p: browse_response(make_tab("Trang chủ", "/featured", home)))
-        assert [v["videoId"] for v in await channel.get_channel_videos(CHANNEL_ID)] == ["h1"]
+        install_fake_client(monkeypatch, channel, lambda p: browse_response(make_tab("Trang chủ", "/featured", home)))
+        videos, token = await channel.fetch_channel_videos_page(CHANNEL_ID)
+        assert (ids(videos), token) == (["h1"], None)
 
-    async def test_raises_when_no_videos_or_home_tab(self, fake_youtube):
-        fake_youtube(channel, lambda p: browse_response(make_tab("Shorts", "/shorts", {})))
+    async def test_raises_when_no_videos_or_home_tab(self, monkeypatch):
+        install_fake_client(monkeypatch, channel, lambda p: browse_response(make_tab("Shorts", "/shorts", {})))
         with pytest.raises(YouTubeStructureChangedError):
-            await channel.get_channel_videos(CHANNEL_ID)
+            await channel.fetch_channel_videos_page(CHANNEL_ID)
 
 
-class TestGetPlaylistVideos:
-    async def test_requests_playlists_tab_directly(self, fake_youtube):
-        client = fake_youtube(
+class TestChannelPlaylistsPage:
+    async def test_requests_playlists_tab_directly(self, monkeypatch):
+        client = install_fake_client(
+            monkeypatch,
             playlist,
-            lambda p: browse_response(make_tab("Danh sách phát", "/playlists", playlists_grid(playlist_lockup("PL1")))),
+            lambda p: browse_response(playlists_tab(playlist_lockup("PL1"), continuation_item("t"))),
         )
-        playlists = await playlist.get_playlist_videos(CHANNEL_ID)
-        assert [p["playlistId"] for p in playlists] == ["PL1"]
+        playlists, token = await playlist.fetch_channel_playlists_page(CHANNEL_ID)
+        assert (ids(playlists, "playlist_id"), token) == (["PL1"], "t")
         assert len(client.requests) == 1
         assert client.requests[0]["params"] == CHANNEL_TAB_PLAYLISTS
 
-    async def test_works_for_channel_without_videos_tab(self, fake_youtube):
-        fake_youtube(
+    async def test_works_for_channel_without_videos_tab(self, monkeypatch):
+        install_fake_client(
+            monkeypatch,
             playlist,
-            lambda p: browse_response(
-                make_tab("Trang chủ", "/featured"),
-                make_tab("Danh sách phát", "/playlists", playlists_grid(playlist_lockup("PL1"))),
-            ),
+            lambda p: browse_response(make_tab("Trang chủ", "/featured"), playlists_tab(playlist_lockup("PL1"))),
         )
-        assert [p["playlistId"] for p in await playlist.get_playlist_videos(CHANNEL_ID)] == ["PL1"]
+        playlists, _ = await playlist.fetch_channel_playlists_page(CHANNEL_ID)
+        assert ids(playlists, "playlist_id") == ["PL1"]
 
-    async def test_retries_when_playlists_tab_swapped_for_shows(self, fake_youtube):
+    async def test_retries_when_playlists_tab_swapped_for_shows(self, monkeypatch):
         responses = iter(
             [
                 browse_response(make_tab("Trang chủ", "/featured", {}), make_tab("Chương trình", "/podcasts")),
-                browse_response(make_tab("Danh sách phát", "/playlists", playlists_grid(playlist_lockup("PL1")))),
+                browse_response(playlists_tab(playlist_lockup("PL1"))),
             ]
         )
-        client = fake_youtube(playlist, lambda p: next(responses))
-        assert [p["playlistId"] for p in await playlist.get_playlist_videos(CHANNEL_ID)] == ["PL1"]
+        client = install_fake_client(monkeypatch, playlist, lambda p: next(responses))
+        playlists, _ = await playlist.fetch_channel_playlists_page(CHANNEL_ID)
+        assert ids(playlists, "playlist_id") == ["PL1"]
         assert len(client.requests) == 2
 
-    async def test_raises_after_all_attempts_without_playlists_tab(self, fake_youtube):
-        client = fake_youtube(playlist, lambda p: browse_response(make_tab("Trang chủ", "/featured", {})))
+    async def test_raises_after_all_attempts_without_playlists_tab(self, monkeypatch):
+        client = install_fake_client(
+            monkeypatch, playlist, lambda p: browse_response(make_tab("Trang chủ", "/featured", {}))
+        )
         with pytest.raises(YouTubeStructureChangedError):
-            await playlist.get_playlist_videos(CHANNEL_ID)
+            await playlist.fetch_channel_playlists_page(CHANNEL_ID)
         assert len(client.requests) == playlist.PLAYLISTS_TAB_ATTEMPTS
 
-    async def test_follows_continuation_pages_until_exhausted(self, fake_youtube):
-        pages = {
-            "tok1": [playlist_lockup("PL2"), playlist_lockup("PL3"), continuation_item("tok2")],
-            "tok2": [playlist_lockup("PL3"), playlist_lockup("PL4")],  # PL3 repeated across pages
+    async def test_continuation_page(self, monkeypatch):
+        install_fake_client(monkeypatch, playlist, lambda p: continuation_response([playlist_lockup("PL9")]))
+        playlists, token = await playlist.fetch_channel_playlists_page(CHANNEL_ID, token="t")
+        assert (ids(playlists, "playlist_id"), token) == (["PL9"], None)
+
+
+class TestPlaylistVideosPage:
+    async def test_first_page(self, monkeypatch):
+        client = install_fake_client(
+            monkeypatch,
+            playlist,
+            lambda p: playlist_page_response(playlist_video_renderer("a"), continuation_item("t1")),
+        )
+        videos, token = await playlist.fetch_playlist_videos_page("PLabcdefghijkl")
+        assert (ids(videos), token) == (["a"], "t1")
+        assert client.requests[0]["browseId"] == "VLPLabcdefghijkl"
+
+    async def test_continuation_page_has_no_contents_key(self, monkeypatch):
+        # Continuation responses carry onResponseReceivedActions, not "contents".
+        install_fake_client(monkeypatch, playlist, lambda p: continuation_response([playlist_video_renderer("b")]))
+        videos, token = await playlist.fetch_playlist_videos_page("PLabcdefghijkl", token="t1")
+        assert (ids(videos), token) == (["b"], None)
+
+    async def test_missing_playlist_is_not_found(self, monkeypatch):
+        install_fake_client(monkeypatch, playlist, lambda p: {"alerts": [{"alertRenderer": {}}]})
+        with pytest.raises(YouTubeNotFoundError):
+            await playlist.fetch_playlist_videos_page("PLabcdefghijkl")
+
+
+class TestSearchPage:
+    async def test_first_page_and_continuation(self, monkeypatch):
+        def handler(payload):
+            if "continuation" in payload:
+                return continuation_response([{"itemSectionRenderer": {"contents": [video_renderer("s2")]}}])
+            return search_response(video_renderer("s1"), continuation_item("t"))
+
+        client = install_fake_client(monkeypatch, search, handler)
+        videos, token = await search.fetch_search_page("q", params="SORT")
+        assert (ids(videos), token) == (["s1"], "t")
+        assert (client.requests[0]["query"], client.requests[0]["params"]) == ("q", "SORT")
+        videos, token = await search.fetch_search_page("q", token="t")
+        assert (ids(videos), token) == (["s2"], None)
+
+    async def test_uses_given_context(self, monkeypatch):
+        client = install_fake_client(monkeypatch, search, lambda p: search_response(video_renderer("s1")))
+        await search.fetch_search_page("q", context={"client": {"gl": "JP"}})
+        assert client.requests[0]["context"] == {"client": {"gl": "JP"}}
+
+    async def test_structure_change(self, monkeypatch):
+        install_fake_client(monkeypatch, search, lambda p: {"contents": {}})
+        with pytest.raises(YouTubeStructureChangedError):
+            await search.fetch_search_page("q")
+
+
+def comment_entity(comment_id, text, likes="12", liked="13", replies="1"):
+    return {
+        "payload": {
+            "commentEntityPayload": {
+                "properties": {"commentId": comment_id, "content": {"content": text}, "publishedTime": "1 ngày trước"},
+                "author": {"displayName": "A", "avatarThumbnailUrl": "av"},
+                "toolbar": {"likeCountNotliked": likes, "likeCountLiked": liked, "replyCount": replies},
+            }
         }
+    }
 
+
+def comments_response(threads, entities, next_token=None, reply_tokens=None):
+    items = []
+    for i, comment_id in enumerate(threads):
+        thread = {"commentViewModel": {"commentViewModel": {"commentId": comment_id}}}
+        if reply_tokens and reply_tokens[i]:
+            thread["replies"] = {"commentRepliesRenderer": {"contents": [continuation_item(reply_tokens[i])]}}
+        items.append({"commentThreadRenderer": thread})
+    if next_token:
+        items.append(continuation_item(next_token))
+    return {
+        "onResponseReceivedEndpoints": [{"reloadContinuationItemsCommand": {"continuationItems": items}}],
+        "frameworkUpdates": {"entityBatchUpdate": {"mutations": entities}},
+    }
+
+
+class TestCommentsPage:
+    async def test_top_comments_with_replies(self, monkeypatch):
         def handler(payload):
-            if "continuation" in payload:
-                items = pages[payload["continuation"]]
-                return {"onResponseReceivedActions": [{"appendContinuationItemsAction": {"continuationItems": items}}]}
-            grid = playlists_grid(playlist_lockup("PL1"), continuation_item("tok1"))
-            return browse_response(make_tab("Danh sách phát", "/playlists", grid))
+            if "videoId" in payload:  # watch-next response carries the comments token
+                action = {"appendContinuationItemsAction": {"continuationItems": [continuation_item("c0")]}}
+                return {"onResponseReceivedEndpoints": [action]}
+            if payload["continuation"] == "c0":
+                return comments_response(
+                    ["c1", "c2"],
+                    [comment_entity("c1", "hello"), comment_entity("c2", "world", likes="")],
+                    next_token="c-next",
+                    reply_tokens=["r1", None],
+                )
+            if payload["continuation"] == "r1":
+                reply_item = {"commentViewModel": {"commentId": "r1a"}}
+                return {
+                    "onResponseReceivedEndpoints": [
+                        {"appendContinuationItemsAction": {"continuationItems": [reply_item]}}
+                    ],
+                    "frameworkUpdates": {"entityBatchUpdate": {"mutations": [comment_entity("r1a", "reply")]}},
+                }
+            raise AssertionError(payload)
 
-        client = fake_youtube(playlist, handler)
-        playlists = await playlist.get_playlist_videos(CHANNEL_ID)
-        assert [p["playlistId"] for p in playlists] == ["PL1", "PL2", "PL3", "PL4"]
-        assert [r.get("continuation") for r in client.requests] == [None, "tok1", "tok2"]
+        install_fake_client(monkeypatch, comment, handler)
+        comments, token = await comment.fetch_comments_page("dQw4w9WgXcQ", "top")
+        assert token == "c-next"
+        assert [(c["comment_id"], c["content"], c["like_count"]) for c in comments] == [
+            ("c1", "hello", 12),  # likeCountNotliked, not likeCountLiked (13)
+            ("c2", "world", 0),
+        ]
+        assert ids(comments[0]["replies"], "comment_id") == ["r1a"]
+        assert "reply_count" not in comments[0]["replies"][0]
+        assert comments[1]["replies"] == []
 
-    async def test_stops_on_repeated_continuation_token(self, fake_youtube):
-        def handler(payload):
-            if "continuation" in payload:
-                items = [playlist_lockup("PL2"), continuation_item("tok1")]
-                return {"onResponseReceivedActions": [{"appendContinuationItemsAction": {"continuationItems": items}}]}
-            grid = playlists_grid(playlist_lockup("PL1"), continuation_item("tok1"))
-            return browse_response(make_tab("Danh sách phát", "/playlists", grid))
+    async def test_newest_uses_prebuilt_token(self, monkeypatch):
+        client = install_fake_client(monkeypatch, comment, lambda p: comments_response([], []))
+        assert await comment.fetch_comments_page("dQw4w9WgXcQ", "newest") == ([], None)
+        assert len(client.requests) == 1 and "continuation" in client.requests[0]
 
-        client = fake_youtube(playlist, handler)
-        assert [p["playlistId"] for p in await playlist.get_playlist_videos(CHANNEL_ID)] == ["PL1", "PL2"]
-        assert len(client.requests) == 2
+    async def test_comments_disabled(self, monkeypatch):
+        install_fake_client(monkeypatch, comment, lambda p: {"contents": {}})
+        assert await comment.fetch_comments_page("dQw4w9WgXcQ", "top") == ([], None)
 
-    async def test_stops_at_page_cap(self, fake_youtube, monkeypatch):
-        monkeypatch.setattr(playlist, "MAX_PLAYLIST_PAGES", 2)
 
-        def handler(payload):
-            if "continuation" in payload:
-                n = int(payload["continuation"]) + 1
-                items = [playlist_lockup(f"PL{n}"), continuation_item(str(n))]
-                return {"onResponseReceivedActions": [{"appendContinuationItemsAction": {"continuationItems": items}}]}
-            grid = playlists_grid(playlist_lockup("PL0"), continuation_item("0"))
-            return browse_response(make_tab("Danh sách phát", "/playlists", grid))
+class TestTranscript:
+    @pytest.fixture
+    def fake_api(self, monkeypatch):
+        from app.crawlers.youtube.transcript import transcript
 
-        client = fake_youtube(playlist, handler)
-        assert [p["playlistId"] for p in await playlist.get_playlist_videos(CHANNEL_ID)] == ["PL0", "PL1", "PL2"]
-        assert len(client.requests) == 3
+        def install(list_result):
+            class FakeApi:
+                def __init__(self, proxy_config=None):
+                    pass
+
+                def list(self, video_id):
+                    if isinstance(list_result, Exception):
+                        raise list_result
+                    return list_result
+
+            monkeypatch.setattr(transcript, "YouTubeTranscriptApi", FakeApi)
+            return transcript
+
+        return install
+
+    def test_available(self, fake_api):
+        class Segment:
+            def __init__(self, text):
+                self.text = text
+
+        class Transcript:
+            language_code = "vi"
+
+            def fetch(self):
+                return [Segment("xin"), Segment("chào")]
+
+        class Transcripts(list):
+            def find_transcript(self, languages):
+                return Transcript()
+
+        transcript = fake_api(Transcripts([Transcript()]))
+        result = transcript._fetch_sync(VIDEO, None)
+        assert (result["available"], result["text"], result["segment_count"], result["reason"]) == (
+            True,
+            "xin chào",
+            2,
+            None,
+        )
+
+    def test_disabled(self, fake_api):
+        from youtube_transcript_api import TranscriptsDisabled
+
+        result = fake_api(TranscriptsDisabled(VIDEO))._fetch_sync(VIDEO, None)
+        assert (result["available"], result["reason"], result["text"]) == (False, "disabled", None)
+
+    def test_unavailable_video_is_not_found(self, fake_api):
+        from youtube_transcript_api import VideoUnavailable
+
+        with pytest.raises(YouTubeNotFoundError):
+            fake_api(VideoUnavailable(VIDEO))._fetch_sync(VIDEO, None)
+
+    @pytest.mark.parametrize("exc", ["blocked", "network"])
+    def test_blocked_or_network_error_is_upstream_error(self, fake_api, exc):
+        import requests
+        from youtube_transcript_api import RequestBlocked
+
+        from app.exceptions import CrawlNetworkError
+
+        error = RequestBlocked(VIDEO) if exc == "blocked" else requests.exceptions.ProxyError("tunnel 403")
+        with pytest.raises(CrawlNetworkError):
+            fake_api(error)._fetch_sync(VIDEO, None)

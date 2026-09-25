@@ -1,4 +1,15 @@
-"""JSON Schema + descriptions for agent/MCP tools (mirrors ai-layer definitions)."""
+"""JSON Schema + descriptions for agent/MCP tools (mirrors ai-layer definitions).
+
+YouTube list tools return {"items": [...], "next_cursor", "has_more", ...};
+pass `next_cursor` back as `cursor` to get the next page.
+"""
+
+_CURSOR = {
+    "type": "string",
+    "description": "next_cursor từ lần gọi trước để lấy trang tiếp theo (bỏ trống = trang đầu)",
+}
+_CHANNEL = {"type": "string", "description": "Channel ID (UCxxxx) hoặc @handle"}
+_VIDEO_IDS = {"type": "array", "items": {"type": "string"}, "maxItems": 8}
 
 YOUTUBE_TOOL_SPECS: list[dict] = [
     {
@@ -14,6 +25,7 @@ YOUTUBE_TOOL_SPECS: list[dict] = [
                     "enum": ["relevance", "upload_date", "view_count", "rating"],
                     "default": "relevance",
                 },
+                "cursor": _CURSOR,
             },
             "required": ["keyword"],
         },
@@ -29,6 +41,7 @@ YOUTUBE_TOOL_SPECS: list[dict] = [
                     "enum": ["music", "gaming", "news", "sports", "tech", "beauty", "food", "travel"],
                 },
                 "max_results": {"type": "integer", "default": 20, "maximum": 50},
+                "cursor": _CURSOR,
             },
             "required": ["topic"],
         },
@@ -49,6 +62,7 @@ YOUTUBE_TOOL_SPECS: list[dict] = [
             "properties": {
                 "query": {"type": "string", "description": "Từ khóa lọc (tùy chọn)", "default": ""},
                 "max_results": {"type": "integer", "default": 20, "maximum": 50},
+                "cursor": _CURSOR,
             },
         },
     },
@@ -61,7 +75,8 @@ YOUTUBE_TOOL_SPECS: list[dict] = [
                 "gl": {"type": "string", "description": "Mã quốc gia (VN, JP, US...)"},
                 "hl": {"type": "string", "description": "Mã ngôn ngữ (vi, ja, en...)", "default": "vi"},
                 "query": {"type": "string", "description": "Từ khóa tìm kiếm theo ngôn ngữ địa phương"},
-                "max_results": {"type": "integer", "default": 20, "maximum": 100},
+                "max_results": {"type": "integer", "default": 20, "maximum": 50},
+                "cursor": _CURSOR,
             },
             "required": ["gl", "query"],
         },
@@ -82,24 +97,21 @@ YOUTUBE_TOOL_SPECS: list[dict] = [
             "type": "object",
             "properties": {
                 "video_id": {"type": "string"},
-                "max_comments": {"type": "integer", "default": 20, "maximum": 20},
-                "sort": {"type": "string", "enum": ["newest", "top"], "default": "newest"},
+                "max_comments": {"type": "integer", "default": 20, "maximum": 50},
+                "sort": {"type": "string", "enum": ["newest", "top"], "default": "top"},
+                "cursor": _CURSOR,
             },
             "required": ["video_id"],
         },
     },
     {
         "name": "youtube_get_comments_batch",
-        "description": "Lấy bình luận của NHIỀU video YouTube song song và gộp lại — CÁCH NÊN DÙNG để phân tích nhận xét cộng đồng. YÊU CẦU: mảng video_ids (chọn 3-5 video view CAO NHẤT từ youtube_search). Video bị khoá/0 comment sẽ tự bị bỏ qua, lấy comment từ các video còn lại — tránh được lỗi 'không có nhận xét' khi video top bị tắt comment. TRẢ VỀ: videos_with_comments, videos_skipped, total_comments, results[]. Chỉ cần gọi 1 lần với 3-5 id.",
+        "description": "Lấy bình luận của NHIỀU video YouTube song song và gộp lại — CÁCH NÊN DÙNG để phân tích nhận xét cộng đồng. YÊU CẦU: mảng video_ids (chọn 3-5 video view CAO NHẤT từ youtube_search). Video bị khoá/0 comment sẽ tự bị bỏ qua, lấy comment từ các video còn lại — tránh được lỗi 'không có nhận xét' khi video top bị tắt comment. TRẢ VỀ: requested, succeeded, total_comments, items[] (mỗi item: video_id, available, reason, comments[]). Chỉ cần gọi 1 lần với 3-5 id.",
         "parameters": {
             "type": "object",
             "properties": {
-                "video_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "3-5 video_id, ưu tiên view cao nhất",
-                },
-                "max_per_video": {"type": "integer", "default": 20, "maximum": 30},
+                "video_ids": {**_VIDEO_IDS, "description": "3-5 video_id, ưu tiên view cao nhất"},
+                "max_per_video": {"type": "integer", "default": 20, "maximum": 50},
                 "sort": {"type": "string", "enum": ["top", "newest"], "default": "top"},
             },
             "required": ["video_ids"],
@@ -107,7 +119,7 @@ YOUTUBE_TOOL_SPECS: list[dict] = [
     },
     {
         "name": "youtube_get_transcript",
-        "description": "Lấy transcript (phụ đề/lời thoại) của một video YouTube. DÙNG KHI: cần phân tích nội dung video (reviewer nói gì) thay vì chỉ comment. Kết hợp với youtube_get_comments_batch để có cả nội dung lẫn phản ứng cộng đồng. TRẢ VỀ: text transcript, language, available (False nếu video không có caption). LƯU Ý: ~60-70% video có caption. Nếu available=False, bỏ qua và dùng comment.",
+        "description": "Lấy transcript (phụ đề/lời thoại) của một video YouTube. DÙNG KHI: cần phân tích nội dung video (reviewer nói gì) thay vì chỉ comment. Kết hợp với youtube_get_comments_batch để có cả nội dung lẫn phản ứng cộng đồng. TRẢ VỀ: text, language, available, reason (khi available=False: disabled hoặc no_transcript). LƯU Ý: ~60-70% video có caption. Nếu available=False, bỏ qua và dùng comment.",
         "parameters": {
             "type": "object",
             "properties": {"video_id": {"type": "string", "description": "YouTube video ID"}},
@@ -116,16 +128,10 @@ YOUTUBE_TOOL_SPECS: list[dict] = [
     },
     {
         "name": "youtube_get_transcript_batch",
-        "description": "Lấy transcript của NHIỀU video YouTube song song — hiệu quả hơn gọi từng cái. DÙNG KHI: muốn phân tích nội dung nhiều video cùng lúc (kết hợp comments + transcript). TRẢ VỀ: dict {video_id: transcript_data}. Video không có caption → null. Tối đa 8 video_ids.",
+        "description": "Lấy transcript của NHIỀU video YouTube song song — hiệu quả hơn gọi từng cái. DÙNG KHI: muốn phân tích nội dung nhiều video cùng lúc (kết hợp comments + transcript). TRẢ VỀ: requested, succeeded, items[] (mỗi item giống youtube_get_transcript; video không có caption → available=False kèm reason). Tối đa 8 video_ids.",
         "parameters": {
             "type": "object",
-            "properties": {
-                "video_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "3-5 video_id cần lấy transcript",
-                }
-            },
+            "properties": {"video_ids": {**_VIDEO_IDS, "description": "3-5 video_id cần lấy transcript"}},
             "required": ["video_ids"],
         },
     },
@@ -134,26 +140,35 @@ YOUTUBE_TOOL_SPECS: list[dict] = [
         "description": "Lấy thông tin kênh YouTube: tên, subscriber, mô tả, avatar. YÊU CẦU: phải có channel_id (dạng UC...) hoặc @handle.",
         "parameters": {
             "type": "object",
-            "properties": {"channel_id": {"type": "string", "description": "Channel ID (UCxxxx) hoặc @handle"}},
+            "properties": {"channel_id": _CHANNEL},
             "required": ["channel_id"],
         },
     },
     {
         "name": "youtube_get_channel_videos",
-        "description": "Lấy danh sách video mới nhất của một kênh YouTube. YÊU CẦU: phải có channel_id.",
+        "description": "Lấy danh sách video mới nhất của một kênh YouTube. YÊU CẦU: phải có channel_id hoặc @handle.",
         "parameters": {
             "type": "object",
             "properties": {
-                "channel_id": {"type": "string"},
-                "max_results": {"type": "integer", "default": 30, "maximum": 50},
+                "channel_id": _CHANNEL,
+                "max_results": {"type": "integer", "default": 20, "maximum": 50},
+                "cursor": _CURSOR,
             },
             "required": ["channel_id"],
         },
     },
     {
         "name": "youtube_get_channel_playlists",
-        "description": "Lấy danh sách playlist của một kênh YouTube. YÊU CẦU: phải có channel_id.",
-        "parameters": {"type": "object", "properties": {"channel_id": {"type": "string"}}, "required": ["channel_id"]},
+        "description": "Lấy danh sách playlist của một kênh YouTube. YÊU CẦU: phải có channel_id hoặc @handle.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "channel_id": _CHANNEL,
+                "max_results": {"type": "integer", "default": 20, "maximum": 50},
+                "cursor": _CURSOR,
+            },
+            "required": ["channel_id"],
+        },
     },
     {
         "name": "youtube_get_playlist_videos",
@@ -162,7 +177,8 @@ YOUTUBE_TOOL_SPECS: list[dict] = [
             "type": "object",
             "properties": {
                 "playlist_id": {"type": "string", "description": "Playlist ID (PLxxxx)"},
-                "max_results": {"type": "integer", "default": 30, "maximum": 50},
+                "max_results": {"type": "integer", "default": 20, "maximum": 50},
+                "cursor": _CURSOR,
             },
             "required": ["playlist_id"],
         },

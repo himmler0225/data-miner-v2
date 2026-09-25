@@ -5,8 +5,9 @@ from app.config.constants import ENDPOINT_SEARCH, YOUTUBE_BASE_URL
 from app.config.headers import get_youtube_headers
 from app.config.logger import Logger
 from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
-from app.crawlers.youtube.utils import parse_view_count
+from app.crawlers.youtube.utils import parse_count, parse_duration_seconds
 
+from ..shared.models import make_video
 from .shorts_constants import _REEL_ENDPOINT, _SEEDLESS_PARAMS
 
 logger = Logger.get(__name__)
@@ -30,64 +31,31 @@ def _next_pos_params(data: dict) -> str | None:
     return unquote(raw) if raw else None
 
 
-def _shorts_url(video_id: str) -> str:
-    return f"{YOUTUBE_BASE_URL}/shorts/{video_id}"
-
-
 def _parse_short(data: dict) -> dict | None:
-    pr = data.get("playerResponse", {})
-    details = pr.get("videoDetails", {})
+    details = data.get("playerResponse", {}).get("videoDetails", {})
     video_id = details.get("videoId")
     if not video_id:
         return None
-    thumbnails = details.get("thumbnail", {}).get("thumbnails", [])
-    if not thumbnails:
-        thumbnails = [{"url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"}]
-    overlay = data.get("overlay", {}).get("reelPlayerOverlayRenderer", {})
-    return {
-        "video_id": video_id,
-        "title": details.get("title", ""),
-        "description": details.get("shortDescription", ""),
-        "view_count": parse_view_count(details.get("viewCount", "")),
-        "channel_id": details.get("channelId") or None,
-        "channel_name": details.get("author", ""),
-        "duration": details.get("lengthSeconds"),
-        "is_live": details.get("isLiveContent", False),
-        "likes": overlay.get("likeButton", {}),
-        "comments": overlay.get("commentButton", {}),
-        "shares": overlay.get("shareButton", {}),
-        "thumbnails": thumbnails,
-        "url": _shorts_url(video_id),
-        "is_short": True,
-        "source": "playerResponse",
-    }
+    return make_video(
+        video_id=video_id,
+        title=details.get("title", ""),
+        description=details.get("shortDescription", ""),
+        channel_id=details.get("channelId"),
+        channel_name=details.get("author", ""),
+        thumbnails=details.get("thumbnail", {}).get("thumbnails"),
+        duration_seconds=parse_duration_seconds(details.get("lengthSeconds")),
+        view_count=parse_count(details.get("viewCount")),
+        is_live=bool(details.get("isLive")),
+        is_short=True,
+    )
 
 
 def _parse_short_from_replacement(data: dict) -> dict | None:
-    ep = _next_endpoint(data)
-    video_id = ep.get("videoId")
+    endpoint = _next_endpoint(data)
+    video_id = endpoint.get("videoId")
     if not video_id:
         return None
-    thumbnails = ep.get("thumbnail", {}).get("thumbnails", [])
-    if not thumbnails:
-        thumbnails = [{"url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"}]
-    return {
-        "video_id": video_id,
-        "title": "",
-        "description": "",
-        "view_count": 0,
-        "channel_id": None,
-        "channel_name": "",
-        "duration": None,
-        "is_live": False,
-        "likes": {},
-        "comments": {},
-        "shares": {},
-        "thumbnails": thumbnails,
-        "url": _shorts_url(video_id),
-        "is_short": True,
-        "source": "replacementEndpoint",
-    }
+    return make_video(video_id=video_id, thumbnails=endpoint.get("thumbnail", {}).get("thumbnails"), is_short=True)
 
 
 def _find_reel_item_renderers(obj: Any) -> list[tuple]:
@@ -133,26 +101,15 @@ def _parse_reel_item_renderer(item_type: str, item: dict) -> dict | None:
     else:
         return None
 
-    if not thumbnails:
-        thumbnails = [{"url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"}]
-
-    return {
-        "video_id": video_id,
-        "title": title,
-        "description": "",
-        "view_count": parse_view_count(views),
-        "channel_id": channel_id,
-        "channel_name": channel,
-        "duration": None,
-        "is_live": False,
-        "likes": {},
-        "comments": {},
-        "shares": {},
-        "thumbnails": thumbnails,
-        "url": _shorts_url(video_id),
-        "is_short": True,
-        "source": "search",
-    }
+    return make_video(
+        video_id=video_id,
+        title=title,
+        channel_id=channel_id,
+        channel_name=channel,
+        thumbnails=thumbnails,
+        view_count=parse_count(views),
+        is_short=True,
+    )
 
 
 async def _fetch_shorts_from_search(client, api_key, query, seen_ids, max_per_query=15) -> list[dict]:
@@ -320,7 +277,7 @@ async def get_shorts_feed(proxy: str = None, max_results: int = 20) -> list[dict
                 consecutive_empty = 0
                 shorts.extend(batch)
                 logger.info(
-                    "[shorts] reel restart=%s +%s -> tổng %s",
+                    "[shorts] reel restart=%s +%s -> total %s",
                     restart,
                     len(batch),
                     len(shorts),

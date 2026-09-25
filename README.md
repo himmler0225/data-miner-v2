@@ -58,14 +58,17 @@ TikTok tries the native (reverse-engineered) client first; if the native pool is
 
 ### Dual protocol: REST + MCP
 
-Crawlers are called from two front doors that share the same business logic: `api/*.py` (plain REST, used by ai-layer's HTTP client and any external caller) and `mcp/server.py` + `tools/` (Model Context Protocol tools, used by ai-layer's agent for direct LLM tool-calling). Neither reimplements crawling — both just adapt the same crawler functions to their transport.
+Crawlers are called from two front doors that share the same business logic: `api/*.py` (plain REST, used by ai-layer's HTTP client and any external caller) and `mcp/server.py` + `tools/` (Model Context Protocol tools, used by ai-layer's agent for direct LLM tool-calling). For YouTube both are thin adapters over `services/youtube.py`, which owns input validation, `@handle` resolution, proxy selection, retries, caching and paging, so REST and MCP behave identically.
 
 ### Error classification
 
 | Exception | Cause | Handling |
 |-----------|-------|----------|
-| `YouTubeStructureChangedError` | Missing/moved key in the response JSON | No retry — carries the missing key path for fast debugging |
-| `CrawlNetworkError` | Timeout / connection error / HTTP 429 | Retried with linear backoff (up to 3 attempts) |
+| `InvalidInputError` | Malformed id, bad parameter, oversized batch, bad cursor | No retry — HTTP 400 |
+| `YouTubeNotFoundError` | Video/channel/playlist doesn't exist or is unavailable (incl. YouTube 400/404) | No retry — HTTP 404 |
+| `YouTubeStructureChangedError` | Missing/moved key in the response JSON | No retry — HTTP 502, logged critical with the missing key path |
+| `CrawlNetworkError`, transport errors, HTTP 5xx | Timeout / connection / proxy error, blocked request | Retried with linear backoff and proxy rotation (3 attempts), then HTTP 502 |
+| HTTP 429 from upstream | Upstream throttling | Retried through a fresh proxy, then HTTP 503 |
 
 ### Safe navigation
 
@@ -118,7 +121,35 @@ All endpoints require an `X-API-Key` header.
 
 ### YouTube — `/api`
 
-`GET /videos/search` · `GET /videos/by-topic` · `GET /videos/shorts` · `GET /videos/live` · `GET /videos/location` · `GET /videos/{video_id}` · `GET /videos/{video_id}/comments` · `GET /videos/comments/batch` · `GET /videos/{video_id}/transcript` · `GET /videos/transcript/batch` · `GET /channels/{channel_id}` · `GET /channels/{channel_id}/videos` · `GET /channels/{channel_id}/playlists` · `GET /playlists/{playlist_id}/videos`
+| Endpoint | Params | Returns |
+|----------|--------|---------|
+| `GET /videos/search` | `q`, `sort` (relevance · upload_date · view_count · rating) | page of videos |
+| `GET /videos/by-topic` | `topic` | page of videos (+ `featured_playlist` for channel topics) |
+| `GET /videos/live` | `q` (optional) | page of videos |
+| `GET /videos/location` | `q`, `gl`, `hl` | page of videos |
+| `GET /videos/shorts` | `limit` | videos (no cursor: the feed is randomized) |
+| `GET /videos/{video_id}` | | video + `keywords`, `category`, `formats`, ... |
+| `GET /videos/{video_id}/comments` | `sort` (top · newest) | page of comments (with replies) |
+| `GET /videos/{video_id}/transcript` | | transcript (`available`, `reason`) |
+| `GET /videos/comments/batch` | `video_ids` (≤ 8, comma-separated), `sort`, `limit` | per-video comments |
+| `GET /videos/transcript/batch` | `video_ids` (≤ 8) | per-video transcripts |
+| `GET /channels/{channel_id}` | | channel |
+| `GET /channels/{channel_id}/videos` | | page of videos (newest first) |
+| `GET /channels/{channel_id}/playlists` | | page of playlists |
+| `GET /playlists/{playlist_id}/videos` | | page of videos |
+
+`{channel_id}` accepts a channel id (`UC...`) or an `@handle`.
+
+**Paging.** List endpoints take `limit` (1–50, default 20) and `cursor`, and return `{"items": [...], "next_cursor": "...", "has_more": true, ...}`. Pass `next_cursor` back as `cursor` for the next page; `next_cursor` is `null` on the last page. Cursors are opaque.
+
+**Item shapes** (snake_case, the same whichever YouTube renderer they came from — see `crawlers/youtube/shared/models.py`):
+
+- video: `video_id`, `url`, `title`, `description`, `channel_id`, `channel_name`, `thumbnails`, `duration`, `duration_seconds`, `view_count`, `published_time`, `is_live`, `is_short`
+- playlist: `playlist_id`, `url`, `title`, `thumbnails`, `video_count`
+- comment: `comment_id`, `author`, `author_avatar`, `content`, `published_time`, `like_count`, `reply_count`, `replies`
+- channel: `channel_id`, `url`, `channel_name`, `handle`, `description`, `avatar`, `banner`, `subscriber_count`, `video_count`
+
+Counts are integers (`null` when YouTube doesn't show one). Responses are cached in-process for a few minutes.
 
 ### TikTok — `/api/tiktok`
 

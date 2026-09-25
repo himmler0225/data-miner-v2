@@ -14,6 +14,9 @@ RATE_LIMITS: dict[str, str] = {
     "playlist": "10/minute",
     "comments": "15/minute",
     "location": "5/minute",
+    "topic": "20/minute",
+    "shorts": "10/minute",
+    "transcript": "15/minute",
     "tiktok": "15/minute",
 }
 
