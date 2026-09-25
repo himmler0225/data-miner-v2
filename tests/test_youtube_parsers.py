@@ -286,10 +286,25 @@ class TestExtractPlaylistsTabItems:
                 continuation_item("tok"),
             )
         }
-        assert extract_playlists_tab_items(tab) == [
-            {"playlistId": "PL1", "title": "First", "thumbnail": "b", "videoCount": "12 video"},
-            {"playlistId": "PL2", "title": "Second", "thumbnail": "", "videoCount": "3 video"},
-        ]
+        assert extract_playlists_tab_items(tab) == (
+            [
+                {"playlistId": "PL1", "title": "First", "thumbnail": "b", "videoCount": "12 video"},
+                {"playlistId": "PL2", "title": "Second", "thumbnail": "", "videoCount": "3 video"},
+            ],
+            "tok",
+        )
+
+    def test_rich_grid_shape(self):
+        tab = {
+            "content": {
+                "richGridRenderer": {
+                    "contents": [{"richItemRenderer": {"content": playlist_lockup("PL1")}}, continuation_item("tok")]
+                }
+            }
+        }
+        playlists, token = extract_playlists_tab_items(tab)
+        assert [p["playlistId"] for p in playlists] == ["PL1"]
+        assert token == "tok"
 
 
 # --- crawler flows ----------------------------------------------------------
@@ -392,3 +407,48 @@ class TestGetPlaylistVideos:
         with pytest.raises(YouTubeStructureChangedError):
             await playlist.get_playlist_videos(CHANNEL_ID)
         assert len(client.requests) == playlist.PLAYLISTS_TAB_ATTEMPTS
+
+    async def test_follows_continuation_pages_until_exhausted(self, fake_youtube):
+        pages = {
+            "tok1": [playlist_lockup("PL2"), playlist_lockup("PL3"), continuation_item("tok2")],
+            "tok2": [playlist_lockup("PL3"), playlist_lockup("PL4")],  # PL3 repeated across pages
+        }
+
+        def handler(payload):
+            if "continuation" in payload:
+                items = pages[payload["continuation"]]
+                return {"onResponseReceivedActions": [{"appendContinuationItemsAction": {"continuationItems": items}}]}
+            grid = playlists_grid(playlist_lockup("PL1"), continuation_item("tok1"))
+            return browse_response(make_tab("Danh sách phát", "/playlists", grid))
+
+        client = fake_youtube(playlist, handler)
+        playlists = await playlist.get_playlist_videos(CHANNEL_ID)
+        assert [p["playlistId"] for p in playlists] == ["PL1", "PL2", "PL3", "PL4"]
+        assert [r.get("continuation") for r in client.requests] == [None, "tok1", "tok2"]
+
+    async def test_stops_on_repeated_continuation_token(self, fake_youtube):
+        def handler(payload):
+            if "continuation" in payload:
+                items = [playlist_lockup("PL2"), continuation_item("tok1")]
+                return {"onResponseReceivedActions": [{"appendContinuationItemsAction": {"continuationItems": items}}]}
+            grid = playlists_grid(playlist_lockup("PL1"), continuation_item("tok1"))
+            return browse_response(make_tab("Danh sách phát", "/playlists", grid))
+
+        client = fake_youtube(playlist, handler)
+        assert [p["playlistId"] for p in await playlist.get_playlist_videos(CHANNEL_ID)] == ["PL1", "PL2"]
+        assert len(client.requests) == 2
+
+    async def test_stops_at_page_cap(self, fake_youtube, monkeypatch):
+        monkeypatch.setattr(playlist, "MAX_PLAYLIST_PAGES", 2)
+
+        def handler(payload):
+            if "continuation" in payload:
+                n = int(payload["continuation"]) + 1
+                items = [playlist_lockup(f"PL{n}"), continuation_item(str(n))]
+                return {"onResponseReceivedActions": [{"appendContinuationItemsAction": {"continuationItems": items}}]}
+            grid = playlists_grid(playlist_lockup("PL0"), continuation_item("0"))
+            return browse_response(make_tab("Danh sách phát", "/playlists", grid))
+
+        client = fake_youtube(playlist, handler)
+        assert [p["playlistId"] for p in await playlist.get_playlist_videos(CHANNEL_ID)] == ["PL0", "PL1", "PL2"]
+        assert len(client.requests) == 3
