@@ -1,162 +1,79 @@
 from typing import Any
 
 from app.config.logger import Logger
-from app.config.proxy import get_proxy
-from app.crawlers.youtube.channel.channel import get_channel_videos
-from app.crawlers.youtube.channel_info.channel_info import get_channel_info
-from app.crawlers.youtube.client import resolve_channel_id_from_handle
-from app.crawlers.youtube.comment.comment import get_video_comments, get_video_comments_batch
-from app.crawlers.youtube.detail.detail import get_video_detail
-from app.crawlers.youtube.live.live import get_all_live_videos
-from app.crawlers.youtube.location.location import get_videos_by_region
-from app.crawlers.youtube.playlist.playlist import get_playlist_videos, get_videos_from_playlist
-from app.crawlers.youtube.search.search import search_youtube
-from app.crawlers.youtube.shorts.shorts import get_shorts_feed
-from app.crawlers.youtube.config import CHANNEL_TOPICS, SEARCH_TOPICS
-from app.crawlers.youtube.transcript.transcript import get_transcript, get_transcript_batch
+from app.services import youtube as yt
 from app.services.tiktok import search_videos as tiktok_search_videos
-from app.services.youtube import get_videos_by_topic
 from app.tools.registry import AgentToolSpec, register
 from app.tools.schemas import TIKTOK_TOOL_SPECS, YOUTUBE_TOOL_SPECS
 
 logger = Logger.get(__name__)
 
 
-def _parse_video_ids(raw: Any) -> list[str]:
-    if isinstance(raw, str):
-        return [v.strip() for v in raw.split(",") if v.strip()]
-    return [str(v).strip() for v in raw if str(v).strip()]
-
-
 # ── YouTube handlers ──────────────────────────────────────────────────────────
+# Thin adapters from tool arguments to app.services.youtube (same code path as
+# the REST API). Tool argument names are kept as the agent layer defines them.
 
 
 async def _youtube_search_handler(inp: dict) -> Any:
-    proxy = await get_proxy()
-    results = await search_youtube(
-        inp["keyword"],
-        max_results=inp.get("max_results", 5),
-        sort=inp.get("sort", "relevance"),
-        proxy=proxy,
+    return await yt.search_videos(
+        inp["keyword"], sort=inp.get("sort", "relevance"), limit=inp.get("max_results", 5), cursor=inp.get("cursor")
     )
-    return {"results": results}
 
 
 async def _youtube_get_by_topic_handler(inp: dict) -> Any:
-    topic = inp["topic"].lower()
-    if topic not in CHANNEL_TOPICS and topic not in SEARCH_TOPICS:
-        raise ValueError(f"Unknown topic '{topic}'")
-    return await get_videos_by_topic(topic, limit=inp.get("max_results", 20))
+    return await yt.topic_videos(inp["topic"], limit=inp.get("max_results"), cursor=inp.get("cursor"))
 
 
 async def _youtube_get_shorts_handler(inp: dict) -> Any:
-    proxy = await get_proxy()
-    limit = inp.get("max_results", 20)
-    videos = await get_shorts_feed(proxy=proxy, max_results=limit)
-    return {"total": len(videos), "videos": videos}
+    return await yt.shorts_feed(limit=inp.get("max_results"))
 
 
 async def _youtube_get_live_handler(inp: dict) -> Any:
-    proxy = await get_proxy()
-    limit = inp.get("max_results", 20)
-    videos = await get_all_live_videos(q=inp.get("query", ""), proxy=proxy, max_results=limit)
-    return {"total": len(videos), "videos": videos}
+    return await yt.live_videos(inp.get("query", ""), limit=inp.get("max_results"), cursor=inp.get("cursor"))
 
 
 async def _youtube_get_by_region_handler(inp: dict) -> Any:
-    gl = inp["gl"]
-    country = "US" if gl.upper() == "US" else "VN"
-    proxy = await get_proxy(country)
-    videos = await get_videos_by_region(
-        gl=gl,
-        hl=inp.get("hl", "vi"),
-        query=inp["query"],
-        proxy=proxy,
-        max_results=inp.get("max_results", 20),
+    return await yt.region_videos(
+        inp["query"], gl=inp["gl"], hl=inp.get("hl", "vi"), limit=inp.get("max_results"), cursor=inp.get("cursor")
     )
-    return {"gl": gl, "query": inp["query"], "total": len(videos), "videos": videos}
 
 
 async def _youtube_get_detail_handler(inp: dict) -> Any:
-    proxy = await get_proxy()
-    detail = await get_video_detail(inp["video_id"], proxy=proxy)
-    return {"detail": detail}
+    return await yt.video_detail(inp["video_id"])
 
 
 async def _youtube_get_comments_handler(inp: dict) -> Any:
-    proxy = await get_proxy()
-    sort = inp.get("sort", "top")
-    if sort not in ("top", "newest"):
-        sort = "top"
-    comments = await get_video_comments(
-        inp["video_id"],
-        proxy=proxy,
-        max_comments=inp.get("max_comments", 20),
-        sort=sort,
+    return await yt.video_comments(
+        inp["video_id"], sort=inp.get("sort", "top"), limit=inp.get("max_comments"), cursor=inp.get("cursor")
     )
-    return {"video_id": inp["video_id"], "total": len(comments), "comments": comments}
 
 
 async def _youtube_get_comments_batch_handler(inp: dict) -> Any:
-    ids = _parse_video_ids(inp.get("video_ids", []))[:8]
-    sort = inp.get("sort", "top")
-    if sort not in ("top", "newest"):
-        sort = "top"
-    proxy = await get_proxy()
-    return await get_video_comments_batch(
-        ids,
-        proxy=proxy,
-        max_per_video=inp.get("max_per_video", 20),
-        sort=sort,
-    )
+    return await yt.comments_batch(inp["video_ids"], sort=inp.get("sort", "top"), limit=inp.get("max_per_video"))
 
 
 async def _youtube_get_transcript_handler(inp: dict) -> Any:
-    result = await get_transcript(inp["video_id"])
-    if result is None:
-        return {"video_id": inp["video_id"], "available": False, "text": None}
-    return {**result, "available": True}
+    return await yt.video_transcript(inp["video_id"])
 
 
 async def _youtube_get_transcript_batch_handler(inp: dict) -> Any:
-    ids = _parse_video_ids(inp.get("video_ids", []))[:8]
-    results = await get_transcript_batch(ids)
-    return {
-        "requested": len(ids),
-        "available": sum(1 for v in results.values() if v),
-        "results": results,
-    }
+    return await yt.transcript_batch(inp["video_ids"])
 
 
 async def _youtube_get_channel_info_handler(inp: dict) -> Any:
-    proxy = await get_proxy()
-    info = await get_channel_info(inp["channel_id"], proxy=proxy)
-    return {"info": info}
+    return await yt.channel_info(inp["channel_id"])
 
 
 async def _youtube_get_channel_videos_handler(inp: dict) -> Any:
-    channel_id = inp["channel_id"]
-    resolved = (
-        await resolve_channel_id_from_handle(channel_id.lstrip("@"))
-        if channel_id.startswith("@")
-        else channel_id
-    )
-    proxy = await get_proxy()
-    videos = await get_channel_videos(channel_id=resolved, max_results=inp.get("max_results", 30), proxy=proxy)
-    return {"channel_id": resolved, "total": len(videos), "videos": videos}
+    return await yt.channel_videos(inp["channel_id"], limit=inp.get("max_results"), cursor=inp.get("cursor"))
 
 
 async def _youtube_get_channel_playlists_handler(inp: dict) -> Any:
-    proxy = await get_proxy()
-    playlists = await get_playlist_videos(inp["channel_id"], proxy=proxy)
-    return {"channel_id": inp["channel_id"], "total": len(playlists), "playlists": playlists}
+    return await yt.channel_playlists(inp["channel_id"], limit=inp.get("max_results"), cursor=inp.get("cursor"))
 
 
 async def _youtube_get_playlist_videos_handler(inp: dict) -> Any:
-    proxy = await get_proxy()
-    videos = await get_videos_from_playlist(inp["playlist_id"], proxy=proxy)
-    limit = inp.get("max_results", 30)
-    return {"playlist_id": inp["playlist_id"], "total": len(videos), "videos": videos[:limit]}
+    return await yt.playlist_videos(inp["playlist_id"], limit=inp.get("max_results"), cursor=inp.get("cursor"))
 
 
 # ── TikTok handlers ───────────────────────────────────────────────────────────

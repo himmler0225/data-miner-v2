@@ -1,53 +1,32 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+"""YouTube REST routes: thin wrappers over app.services.youtube.
+
+List routes take `limit` + `cursor` and return
+`{"items", "next_cursor", "has_more", ...}`; pass `next_cursor` back as
+`cursor` for the next page. Errors: 400 bad input, 404 not found,
+502/503 upstream failures (see app/api/errors.py).
+"""
+
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from app.api.errors import api_ok
 from app.api.rate_limit_config import endpoint_limit
-from app.config.proxy import get_proxy
-from app.crawlers.youtube.channel.channel import get_channel_videos
-from app.crawlers.youtube.channel_info.channel_info import get_channel_info
-from app.crawlers.youtube.client import resolve_channel_id_from_handle
-from app.crawlers.youtube.comment.comment import get_video_comments, get_video_comments_batch
-from app.crawlers.youtube.config import ALL_TOPICS, CHANNEL_TOPICS, SEARCH_TOPICS
-from app.crawlers.youtube.detail.detail import get_video_detail
-from app.crawlers.youtube.live.live import get_all_live_videos
-from app.crawlers.youtube.location.location import get_videos_by_region
-from app.crawlers.youtube.playlist.playlist import get_playlist_videos, get_videos_from_playlist
-from app.crawlers.youtube.search.search import search_youtube
-from app.crawlers.youtube.shorts.shorts import get_shorts_feed
-from app.crawlers.youtube.transcript.transcript import get_transcript, get_transcript_batch
-from app.crawlers.youtube.utils import retry_on_failure
+from app.crawlers.youtube.config import DEFAULT_PAGE_LIMIT, MAX_BATCH_IDS, MAX_PAGE_LIMIT
 from app.middleware.auth_middleware import verify_api_key
 from app.middleware.rate_limit import limiter
-from app.services.youtube import get_videos_by_topic
+from app.services import youtube as yt
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
+Limit = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT, description="Items per page")
+Cursor = Query(None, description="`next_cursor` from the previous page")
+VideoIds = Query(..., description=f"Comma-separated video ids (max {MAX_BATCH_IDS})")
+SearchSort = Literal["relevance", "upload_date", "view_count", "rating"]
+CommentSort = Literal["top", "newest"]
 
-@router.get("/videos/by-topic", summary="Videos by Topic")
-async def videos_by_topic(
-    topic: str = Query(..., description=f"Topic: {', '.join(ALL_TOPICS)}"),
-    limit: int = Query(20, ge=1, le=50),
-    page: int = Query(1, ge=1),
-):
-    t = topic.lower()
-    if t not in CHANNEL_TOPICS and t not in SEARCH_TOPICS:
-        from app.i18n import get_locale, t as tr
 
-        raise HTTPException(
-            status_code=400,
-            detail=tr(
-                "errors.unknown_topic",
-                get_locale(),
-                topic=topic,
-                available=", ".join(ALL_TOPICS),
-            ),
-        )
-
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        return await get_videos_by_topic(topic, limit=limit, page=page)
-
-    return await api_ok(_())
+# ── videos ────────────────────────────────────────────────────────────────────
 
 
 @router.get("/videos/search", summary="Search Videos")
@@ -55,180 +34,122 @@ async def videos_by_topic(
 async def search_videos(
     request: Request,
     response: Response,
-    q: str = Query(...),
-    page: int = Query(1, ge=1),
-    limit: int = Query(30, ge=1, le=50),
-    sort: str = Query("relevance", enum=["relevance", "upload_date", "view_count", "rating"]),
+    q: str,
+    sort: SearchSort = "relevance",
+    limit: int = Limit,
+    cursor: str | None = Cursor,
 ):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        proxy = await get_proxy()
-        fetch_n = min(page * limit, 50)
-        results = await search_youtube(q, max_results=fetch_n, sort=sort, proxy=proxy)
-        start = (page - 1) * limit
-        return {
-            "query": q,
-            "page": page,
-            "limit": limit,
-            "total": len(results),
-            "results": results[start : start + limit],
-        }
-
-    return await api_ok(_())
+    return await api_ok(yt.search_videos(q, sort=sort, limit=limit, cursor=cursor))
 
 
-@router.get("/videos/shorts", summary="Shorts Feed")
-async def get_videos_shorts(limit: int = Query(30, ge=1, le=50)):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        proxy = await get_proxy()
-        videos = await get_shorts_feed(proxy=proxy, max_results=limit)
-        return {"total": len(videos), "videos": videos}
-
-    return await api_ok(_())
+@router.get("/videos/by-topic", summary="Videos by Topic")
+@limiter.limit(endpoint_limit("topic"))
+async def videos_by_topic(
+    request: Request,
+    response: Response,
+    topic: str = Query(..., description=f"One of: {', '.join(yt.TOPICS)}"),
+    limit: int = Limit,
+    cursor: str | None = Cursor,
+):
+    return await api_ok(yt.topic_videos(topic, limit=limit, cursor=cursor))
 
 
 @router.get("/videos/live", summary="Live Videos")
-async def get_videos_live(q: str = Query(""), page: int = Query(1, ge=1), limit: int = Query(30, ge=1, le=50)):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        start = (page - 1) * limit
-        proxy = await get_proxy()
-        videos = await get_all_live_videos(q=q, proxy=proxy, max_results=start + limit)
-        return {"total": len(videos), "videos": videos}
-
-    return await api_ok(_())
+@limiter.limit(endpoint_limit("live"))
+async def live_videos(
+    request: Request, response: Response, q: str = "", limit: int = Limit, cursor: str | None = Cursor
+):
+    return await api_ok(yt.live_videos(q, limit=limit, cursor=cursor))
 
 
 @router.get("/videos/location", summary="Videos by Region")
-async def get_videos_location(
-    gl: str = Query(...), hl: str = Query("vi"), query: str = Query(...), max_results: int = Query(50, ge=1, le=100)
+@limiter.limit(endpoint_limit("location"))
+async def region_videos(
+    request: Request,
+    response: Response,
+    q: str,
+    gl: str = Query(..., description="Country code (VN, US, JP...)"),
+    hl: str = Query("vi", description="Language code (vi, en, ja...)"),
+    limit: int = Limit,
+    cursor: str | None = Cursor,
 ):
-    async def _():
-        country = "US" if gl.upper() == "US" else "VN"
-        proxy = await get_proxy(country)
-        videos = await get_videos_by_region(gl=gl, hl=hl, query=query, proxy=proxy, max_results=max_results)
-        return {"gl": gl, "query": query, "total": len(videos), "videos": videos}
-
-    return await api_ok(_())
+    return await api_ok(yt.region_videos(q, gl=gl, hl=hl, limit=limit, cursor=cursor))
 
 
-@router.get("/videos/{video_id}", summary="Video Detail")
-async def video_detail(video_id: str):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        proxy = await get_proxy()
-        detail = await get_video_detail(video_id, proxy=proxy)
-        return {"detail": detail}
-
-    return await api_ok(_())
+@router.get("/videos/shorts", summary="Shorts Feed")
+@limiter.limit(endpoint_limit("shorts"))
+async def shorts_feed(request: Request, response: Response, limit: int = Limit):
+    return await api_ok(yt.shorts_feed(limit=limit))
 
 
-@router.get("/videos/{video_id}/comments", summary="Video Comments")
-async def get_comments(
-    video_id: str,
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    sort: str = Query("top", enum=["top", "newest"]),
+@router.get("/videos/comments/batch", summary="Comments for multiple videos")
+@limiter.limit(endpoint_limit("comments"))
+async def comments_batch(
+    request: Request, response: Response, video_ids: str = VideoIds, sort: CommentSort = "top", limit: int = Limit
 ):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        start = (page - 1) * limit
-        proxy = await get_proxy()
-        comments = await get_video_comments(video_id, proxy=proxy, max_comments=start + limit, sort=sort)
-        return {"video_id": video_id, "total": len(comments), "comments": comments[start:]}
-
-    return await api_ok(_())
-
-
-@router.get("/videos/comments/batch", summary="Comments for multiple videos (parallel)")
-async def get_comments_batch(
-    video_ids: str = Query(..., description="Comma-separated video_ids (pick top N by view)"),
-    limit: int = Query(20, ge=1, le=100),
-    sort: str = Query("top", enum=["top", "newest"]),
-):
-    ids = [v.strip() for v in video_ids.split(",") if v.strip()][:8]
-    if not ids:
-        raise HTTPException(status_code=400, detail="errors.video_ids_empty")
-
-    async def _():
-        proxy = await get_proxy()
-        return await get_video_comments_batch(ids, proxy=proxy, max_per_video=limit, sort=sort)
-
-    return await api_ok(_())
-
-
-@router.get("/channels/{channel_id}", summary="Channel Info")
-async def channel_info(channel_id: str):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        proxy = await get_proxy()
-        info = await get_channel_info(channel_id, proxy=proxy)
-        return {"info": info}
-
-    return await api_ok(_())
-
-
-@router.get("/channels/{channel_id}/videos", summary="Channel Videos")
-async def channel_videos(channel_id: str, page: int = Query(1, ge=1), limit: int = Query(30, ge=1, le=50)):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        resolved = (
-            await resolve_channel_id_from_handle(channel_id.lstrip("@")) if channel_id.startswith("@") else channel_id
-        )
-        start = (page - 1) * limit
-        proxy = await get_proxy()
-        videos = await get_channel_videos(channel_id=resolved, max_results=start + limit, proxy=proxy)
-        return {"channel_id": resolved, "total": len(videos), "videos": videos}
-
-    return await api_ok(_())
-
-
-@router.get("/channels/{channel_id}/playlists", summary="Channel Playlists")
-async def channel_playlists(channel_id: str):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        proxy = await get_proxy()
-        playlists = await get_playlist_videos(channel_id, proxy=proxy)
-        return {"channel_id": channel_id, "total": len(playlists), "playlists": playlists}
-
-    return await api_ok(_())
-
-
-@router.get("/playlists/{playlist_id}/videos", summary="Playlist Videos")
-async def playlist_videos(playlist_id: str):
-    @retry_on_failure(max_retries=3, delay=1)
-    async def _():
-        proxy = await get_proxy()
-        videos = await get_videos_from_playlist(playlist_id, proxy=proxy)
-        return {"playlist_id": playlist_id, "total": len(videos), "videos": videos}
-
-    return await api_ok(_())
-
-
-@router.get("/videos/{video_id}/transcript", summary="Video Transcript")
-async def video_transcript(video_id: str):
-    async def _():
-        result = await get_transcript(video_id)
-        if result is None:
-            return {"video_id": video_id, "available": False, "text": None}
-        return {**result, "available": True}
-
-    return await api_ok(_())
+    return await api_ok(yt.comments_batch(video_ids, sort=sort, limit=limit))
 
 
 @router.get("/videos/transcript/batch", summary="Transcripts for multiple videos")
-async def transcript_batch(video_ids: str = Query(..., description="Comma-separated video_ids (max 8)")):
-    ids = [v.strip() for v in video_ids.split(",") if v.strip()][:8]
-    if not ids:
-        raise HTTPException(status_code=400, detail="errors.video_ids_empty")
+@limiter.limit(endpoint_limit("transcript"))
+async def transcript_batch(request: Request, response: Response, video_ids: str = VideoIds):
+    return await api_ok(yt.transcript_batch(video_ids))
 
-    async def _():
-        results = await get_transcript_batch(ids)
-        return {
-            "requested": len(ids),
-            "available": sum(1 for v in results.values() if v),
-            "results": results,
-        }
 
-    return await api_ok(_())
+@router.get("/videos/{video_id}", summary="Video Detail")
+@limiter.limit(endpoint_limit("video_detail"))
+async def video_detail(request: Request, response: Response, video_id: str):
+    return await api_ok(yt.video_detail(video_id))
+
+
+@router.get("/videos/{video_id}/comments", summary="Video Comments")
+@limiter.limit(endpoint_limit("comments"))
+async def video_comments(
+    request: Request,
+    response: Response,
+    video_id: str,
+    sort: CommentSort = "top",
+    limit: int = Limit,
+    cursor: str | None = Cursor,
+):
+    return await api_ok(yt.video_comments(video_id, sort=sort, limit=limit, cursor=cursor))
+
+
+@router.get("/videos/{video_id}/transcript", summary="Video Transcript")
+@limiter.limit(endpoint_limit("transcript"))
+async def video_transcript(request: Request, response: Response, video_id: str):
+    return await api_ok(yt.video_transcript(video_id))
+
+
+# ── channels / playlists ──────────────────────────────────────────────────────
+# `channel_id` accepts a channel id (UC...) or an @handle.
+
+
+@router.get("/channels/{channel_id}", summary="Channel Info")
+@limiter.limit(endpoint_limit("channel_info"))
+async def channel_info(request: Request, response: Response, channel_id: str):
+    return await api_ok(yt.channel_info(channel_id))
+
+
+@router.get("/channels/{channel_id}/videos", summary="Channel Videos")
+@limiter.limit(endpoint_limit("channel_videos"))
+async def channel_videos(
+    request: Request, response: Response, channel_id: str, limit: int = Limit, cursor: str | None = Cursor
+):
+    return await api_ok(yt.channel_videos(channel_id, limit=limit, cursor=cursor))
+
+
+@router.get("/channels/{channel_id}/playlists", summary="Channel Playlists")
+@limiter.limit(endpoint_limit("playlist"))
+async def channel_playlists(
+    request: Request, response: Response, channel_id: str, limit: int = Limit, cursor: str | None = Cursor
+):
+    return await api_ok(yt.channel_playlists(channel_id, limit=limit, cursor=cursor))
+
+
+@router.get("/playlists/{playlist_id}/videos", summary="Playlist Videos")
+@limiter.limit(endpoint_limit("playlist"))
+async def playlist_videos(
+    request: Request, response: Response, playlist_id: str, limit: int = Limit, cursor: str | None = Cursor
+):
+    return await api_ok(yt.playlist_videos(playlist_id, limit=limit, cursor=cursor))

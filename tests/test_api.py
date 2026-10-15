@@ -38,9 +38,9 @@ class TestSearchEndpoint:
         response = client.get("/api/videos/search", headers=auth_headers)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    def test_search_invalid_page_parameter(self, client, auth_headers):
+    def test_search_invalid_limit_parameter(self, client, auth_headers):
         response = client.get(
-            "/api/videos/search?q=python&page=0",
+            "/api/videos/search?q=python&limit=0",
             headers=auth_headers,
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -52,9 +52,11 @@ class TestVideoDetailEndpoint:
         response = client.get("/api/videos/dQw4w9WgXcQ")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    @pytest.mark.integration
     def test_video_detail_route_exists(self, client, auth_headers):
         response = client.get("/api/videos/dQw4w9WgXcQ", headers=auth_headers)
         assert response.status_code in (
             status.HTTP_200_OK,
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status.HTTP_502_BAD_GATEWAY,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
         )

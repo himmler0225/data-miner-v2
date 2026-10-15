@@ -48,6 +48,7 @@ async def shutdown(state: AppState) -> None:
         task.cancel()
     if state.background_tasks:
         await asyncio.gather(*state.background_tasks, return_exceptions=True)
+        state.background_tasks.clear()
 
     if state.scheduler_started:
         from app.scheduler.scheduler import shutdown_scheduler

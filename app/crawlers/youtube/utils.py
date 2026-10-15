@@ -1,98 +1,61 @@
-import asyncio
-from functools import wraps
+import re
 
-import httpx
-from fastapi import HTTPException
+# Abbreviation suffixes YouTube uses for counts: English (hl=en) and Vietnamese
+# (hl=vi, this crawler's default: "N" nghìn, "Tr" triệu, "T" tỷ).
+_COUNT_UNITS = {
+    "k": 1_000,
+    "n": 1_000,
+    "m": 1_000_000,
+    "tr": 1_000_000,
+    "b": 1_000_000_000,
+    "t": 1_000_000_000,
+    "tỷ": 1_000_000_000,
+}
+_COUNT_RE = re.compile(r"(\d[\d.,]*)\s*([^\d\s.,]*)")
 
-from app.config.logger import Logger
-from app.config.proxy import registry
-from app.exceptions import YouTubeStructureChangedError
 
-logger = Logger.get(__name__)
-
-
-def parse_view_count(text) -> int:
-    if not text:
-        return 0
-
-    first = str(text).replace("\xa0", " ").split()[0].strip().upper().replace(",", "")
-
+def parse_count(text) -> int | None:
+    """Parse a YouTube count ("1.234.567 lượt xem", "1,2 Tr lượt xem", "12K views",
+    "3 video", 1234) into an int. Returns None when there's no number in it."""
+    if text is None:
+        return None
+    if isinstance(text, int):
+        return text
+    match = _COUNT_RE.search(str(text).replace("\xa0", " "))
+    if not match:
+        return None
+    number, unit = match.group(1), match.group(2).lower()
+    multiplier = _COUNT_UNITS.get(unit)
+    if multiplier is None:
+        # Plain count: "." and "," are thousands separators ("1.234.567", "1,234,567").
+        digits = re.sub(r"[.,]", "", number)
+        return int(digits) if digits else None
+    # Abbreviated count: the single separator is a decimal point ("1,2 Tr", "1.2M").
     try:
-        if "TR" in str(text).upper():
-            number = first.replace(".", "").replace(",", ".")
-            return int(float(number) * 1_000_000)
-
-        if first.endswith("K"):
-            return int(float(first[:-1]) * 1_000)
-
-        if first.endswith("M"):
-            return int(float(first[:-1]) * 1_000_000)
-
-        if first.endswith("B"):
-            return int(float(first[:-1]) * 1_000_000_000)
-
-        return int(first.replace(".", ""))
-
-    except ValueError, AttributeError:
-        return 0
+        return int(float(number.replace(",", ".")) * multiplier)
+    except ValueError:
+        return None
 
 
-def retry_on_failure(max_retries=3, delay=1):
-    """Retry decorator with linear backoff. Raises immediately on YouTubeStructureChangedError."""
+def parse_duration_seconds(text) -> int | None:
+    """Parse "1:02:03" / "3:21" (or a seconds count like "201") into seconds."""
+    if text is None or text == "":
+        return None
+    if isinstance(text, int):
+        return text
+    parts = str(text).strip().split(":")
+    if not all(p.isdigit() for p in parts):
+        return None
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + int(part)
+    return seconds
 
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            last_exception = None
-            for attempt in range(max_retries):
-                try:
-                    return await func(*args, **kwargs)
-                except YouTubeStructureChangedError as e:
-                    logger.critical(
-                        f"YouTube structure changed in {func.__name__}: {e}",
-                        extra={"extra_data": {"context": e.context}},
-                    )
-                    from app.i18n import get_locale, t
 
-                    raise HTTPException(
-                        status_code=502,
-                        detail=t("errors.youtube_structure_changed", get_locale(), detail=str(e)),
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    if isinstance(e, httpx.HTTPStatusError) and 400 <= e.response.status_code < 500:
-                        raise
-                    last_exception = e
-                    if isinstance(
-                        e,
-                        (
-                            httpx.ProxyError,
-                            httpx.ConnectError,
-                            httpx.RemoteProtocolError,
-                        ),
-                    ):
-                        registry.rotate()
-                    if attempt < max_retries - 1:
-                        wait_time = delay * (attempt + 1)
-                        logger.warning(
-                            "Attempt %d/%d for %s failed, retrying in %ds: %s",
-                            attempt + 1,
-                            max_retries,
-                            func.__name__,
-                            wait_time,
-                            e,
-                        )
-                        await asyncio.sleep(wait_time)
-                        continue
-                    logger.error(
-                        " All %d retries exhausted for %s",
-                        max_retries,
-                        func.__name__,
-                        exc_info=True,
-                    )
-                    raise last_exception
-
-        return wrapper
-
-    return decorator
+def format_duration(seconds: int | None) -> str:
+    """Seconds as YouTube's display format: "3:21", "1:02:03"."""
+    if seconds is None:
+        return ""
+    hours, rest = divmod(int(seconds), 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"

@@ -6,6 +6,7 @@ from app.config.http import (
     REMOTE_CONFIG_TIMEOUT,
 )
 from app.crawlers.youtube.config import (
+    CHANNEL_TAB_PLAYLISTS,
     CHANNEL_TAB_VIDEOS,
     CLIENT_GL,
     CLIENT_HL,

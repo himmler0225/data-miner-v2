@@ -3,75 +3,62 @@ from app.config.headers import get_youtube_headers
 from app.crawlers.youtube.client import create_httpx_client, get_context, get_youtube_api_key, get_youtube_api_url
 
 from ....exceptions import YouTubeStructureChangedError
-from ..shared.parsers import extract_continuation_token, get_continuation_items, parse_video_renderer
-from .search_constants import SORT_OPTIONS
+from ..shared.models import extract_videos
+from ..shared.parsers import extract_continuation_token, get_continuation_items
 
 
-def extract_video_items(items: list[dict]) -> list[dict]:
-    results = []
-    for item in items:
-        if "richItemRenderer" in item:
-            video = item["richItemRenderer"].get("content", {}).get("videoRenderer")
-        else:
-            video = item.get("videoRenderer")
-        if not video or not video.get("videoId"):
-            continue
-        parsed = parse_video_renderer(video)
-        runs = video.get("detailedMetadataSnippets", [{}])[0].get("snippetText", {}).get("runs", [])
-        parsed["description_snippet"] = "".join(r.get("text", "") for r in runs)
-        results.append(parsed)
-    return results
+def _parse_sections(sections: list[dict]) -> tuple[list[dict], str | None]:
+    videos, token = [], None
+    for section in sections:
+        if "itemSectionRenderer" in section:
+            videos += extract_videos(section["itemSectionRenderer"].get("contents", []))
+        elif "continuationItemRenderer" in section:
+            token = extract_continuation_token(section)
+    return videos, token
 
 
-async def search_youtube(query: str, max_results: int = 20, proxy: str = None, sort: str = "relevance") -> list[dict]:
+async def fetch_search_page(
+    query: str,
+    *,
+    params: str | None = None,
+    context: dict | None = None,
+    token: str | None = None,
+    proxy: str | None = None,
+) -> tuple[list[dict], str | None]:
+    """One page of YouTube search results: `(videos, next_token)`.
+
+    `params` is the search filter/sort protobuf (sort order, live-only, ...) and
+    `context` overrides the InnerTube context (e.g. another country's gl/hl);
+    pass the same `context` for continuation pages. `token` continues a previous
+    page; None fetches the first one."""
     api_key = await get_youtube_api_key(proxy=proxy)
     search_url = get_youtube_api_url(ENDPOINT_SEARCH, api_key)
-    headers = get_youtube_headers()
-    sort_param = SORT_OPTIONS.get(sort)
+    payload: dict = {"context": context or get_context()}
+    if token:
+        payload["continuation"] = token
+    else:
+        payload["query"] = query
+        if params:
+            payload["params"] = params
 
-    collected = []
-    continuation = None
-
-    async with create_httpx_client(proxy=proxy, headers=headers) as client:
-        payload = {"context": get_context(), "query": query}
-        if sort_param:
-            payload["params"] = sort_param
-
+    async with create_httpx_client(proxy=proxy, headers=get_youtube_headers()) as client:
         resp = await client.post(search_url, json=payload)
         resp.raise_for_status()
         data = resp.json()
 
-        sections = (
-            data.get("contents", {})
-            .get("twoColumnSearchResultsRenderer", {})
-            .get("primaryContents", {})
-            .get("sectionListRenderer", {})
-            .get("contents")
+    if token:
+        return _parse_sections(get_continuation_items(data))
+
+    sections = (
+        data.get("contents", {})
+        .get("twoColumnSearchResultsRenderer", {})
+        .get("primaryContents", {})
+        .get("sectionListRenderer", {})
+        .get("contents")
+    )
+    if not sections:
+        raise YouTubeStructureChangedError(
+            "sectionListRenderer.contents not found in search response",
+            context={"query": query, "top_keys": list(data.get("contents", {}).keys())},
         )
-        if not sections:
-            raise YouTubeStructureChangedError(
-                "sectionListRenderer.contents not found in search response",
-                context={"top_keys": list(data.get("contents", {}).keys())},
-            )
-
-        for section in sections:
-            if "itemSectionRenderer" in section:
-                collected += extract_video_items(section["itemSectionRenderer"].get("contents", []))
-            if "continuationItemRenderer" in section:
-                continuation = extract_continuation_token(section)
-
-        ctx = get_context()
-        while continuation and len(collected) < max_results:
-            token, continuation = continuation, None
-            payload = {"context": ctx, "continuation": token}
-            resp = await client.post(search_url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            for section in get_continuation_items(data):
-                if "itemSectionRenderer" in section:
-                    collected += extract_video_items(section["itemSectionRenderer"].get("contents", []))
-                if "continuationItemRenderer" in section:
-                    continuation = extract_continuation_token(section)
-
-    deduped = list({v["video_id"]: v for v in collected if v.get("video_id")}.values())
-    return deduped[:max_results]
+    return _parse_sections(sections)
